@@ -174,6 +174,37 @@ pub fn parse_interaction(body: &Value) -> Result<ModelTurn, ModelError> {
     Ok(turn)
 }
 
+/// Light sanity check before asking Google. Google's own check decides validity; this only
+/// catches copy-paste accidents and anything unsafe to put in an HTTP header.
+/// Error messages describe the problem without echoing the key.
+pub fn normalise_key(raw: &str) -> Result<String, String> {
+    let key = raw
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'' || c == '`');
+    if key.is_empty() {
+        return Err("Please paste the key into the box first.".into());
+    }
+    if key.chars().any(char::is_whitespace) {
+        return Err(
+            "The key has a space or line break in the middle. Please copy it again as one piece."
+                .into(),
+        );
+    }
+    if !key.bytes().all(|b| b.is_ascii_graphic()) {
+        return Err("The key contains unusual characters. Please copy it again from Google AI Studio using its copy button.".into());
+    }
+    if key.len() < 20 {
+        return Err(format!(
+            "The key looks too short ({} characters), so it may not have copied completely. Use the copy button in Google AI Studio.",
+            key.len()
+        ));
+    }
+    if key.len() > 512 {
+        return Err("That's much longer than a key. Please copy just the key itself.".into());
+    }
+    Ok(key.to_string())
+}
+
 /// Checks a key with a free metadata call (no tokens used).
 pub async fn test_key(http: &reqwest::Client, key: &str) -> Result<(), String> {
     let resp = http
@@ -264,6 +295,43 @@ mod tests {
         assert_eq!(body["model"], MODEL);
         assert!(body.get("previous_interaction_id").is_none());
         assert_eq!(body["tools"][0]["name"], "open_application");
+    }
+
+    #[test]
+    fn key_check_accepts_real_formats_and_explains_problems() {
+        let classic = format!("AIza{}", "x".repeat(35));
+        assert_eq!(
+            normalise_key(&format!(
+                "  {classic}
+"
+            ))
+            .unwrap(),
+            classic
+        );
+        assert_eq!(normalise_key(&format!("\"{classic}\"")).unwrap(), classic);
+        // Other Google formats (e.g. with dots) must not be rejected by us.
+        let dotted = format!("AQ.{}", "Ab8_-x".repeat(10));
+        assert_eq!(normalise_key(&dotted).unwrap(), dotted);
+
+        assert!(normalise_key("").unwrap_err().contains("paste"));
+        assert!(
+            normalise_key("AIza abc defghijklmnopqrstuvwxyz")
+                .unwrap_err()
+                .contains("space")
+        );
+        assert!(
+            normalise_key(&format!("AIza{}é", "x".repeat(30)))
+                .unwrap_err()
+                .contains("unusual")
+        );
+        assert!(
+            normalise_key("AIzaShort")
+                .unwrap_err()
+                .contains("too short")
+        );
+        // Never echo the key back.
+        let err = normalise_key("AIzaSecretButShort").unwrap_err();
+        assert!(!err.contains("AIzaSecret"));
     }
 
     #[test]

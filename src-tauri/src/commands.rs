@@ -104,18 +104,9 @@ pub async fn save_gemini_key(
     state: State<'_, AgentState>,
     key: String,
 ) -> Result<AssistantSetup, String> {
-    let key = key.trim();
-    if !(20..=200).contains(&key.len())
-        || !key
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-    {
-        return Err(
-            "That doesn't look like a Gemini API key. Copy it from Google AI Studio.".into(),
-        );
-    }
-    gemini::test_key(&state.http, key).await?;
-    secrets::save_gemini_key(key).map_err(|e| {
+    let key = gemini::normalise_key(&key)?;
+    gemini::test_key(&state.http, &key).await?;
+    secrets::save_gemini_key(&key).map_err(|e| {
         eprintln!("gemini key write failed: {e}");
         "The key works, but Windows couldn't store it safely.".to_string()
     })?;

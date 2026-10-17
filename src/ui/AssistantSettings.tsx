@@ -75,7 +75,7 @@ export function AssistantSettings({ onChanged }: { onChanged: () => void }) {
             onChange={(e) => setKey(e.target.value)}
             autoComplete="off"
             spellCheck={false}
-            maxLength={200}
+            maxLength={512}
           />
           <button type="submit" disabled={busy || !key.trim()}>
             {busy ? "Checking with Google…" : "Save and test"}
