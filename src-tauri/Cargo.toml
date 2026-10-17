@@ -1,0 +1,27 @@
+[package]
+name = "voice-desktop-agent"
+version = "0.1.0"
+description = "Voice-first Windows desktop assistant"
+authors = ["gogankoko"]
+edition = "2024"
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name (cargo#8519 on Windows).
+name = "voice_agent_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Pinned to the 2.x line: crates.io also publishes 3.0 alphas, which we do not use.
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

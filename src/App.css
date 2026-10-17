@@ -1,0 +1,274 @@
+:root {
+  --text-scale: 1;
+  --font-size: calc(19px * var(--text-scale));
+  --bg: #f7f7f4;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --muted: #4a4a4a;
+  --border: #6b6b6b;
+  --accent: #0b5cad;
+  --accent-text: #ffffff;
+  --stop: #b00020;
+  --notice-bg: #fff4d6;
+  --focus: #ffbf47;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --surface: #1e1e1e;
+    --text: #f2f2f2;
+    --muted: #c8c8c8;
+    --border: #9a9a9a;
+    --accent: #6cb4ff;
+    --accent-text: #0a0a0a;
+    --stop: #ff8a8a;
+    --notice-bg: #3a3014;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: var(--font-size);
+  line-height: 1.5;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  min-height: 48px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  padding: 0.4em 1em;
+  background: var(--surface);
+  color: var(--text);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button[aria-current="page"] {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+:focus-visible {
+  outline: 4px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.topbar h1 {
+  font-size: 1.4em;
+  margin: 0;
+}
+
+.topbar nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.notice {
+  margin: 1rem 1.25rem 0;
+  padding: 0.75rem 1rem;
+  background: var(--notice-bg);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.2em;
+  font-weight: 600;
+}
+
+.status-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.2em;
+  height: 2.2em;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+}
+
+.mic-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  width: 11em;
+  height: 11em;
+  border-radius: 50%;
+  border-width: 3px;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.mic:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.mic-icon {
+  font-size: 2.5em;
+}
+
+.hint {
+  color: var(--muted);
+  margin: 0;
+  text-align: center;
+}
+
+.transcript {
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 1rem;
+  min-height: 8em;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.transcript ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.msg-from {
+  font-weight: 700;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.composer label {
+  font-weight: 600;
+}
+
+.composer-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.composer-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.capabilities {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.4rem 1.25rem;
+}
+
+.capabilities dt {
+  font-weight: 600;
+}
+
+.capabilities dd {
+  margin: 0;
+}
+
+.stopbar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem;
+  background: var(--bg);
+  border-top: 2px solid var(--border);
+}
+
+.stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  min-width: 10em;
+  min-height: 56px;
+  font-weight: 700;
+  border-color: var(--stop);
+  color: var(--stop);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
