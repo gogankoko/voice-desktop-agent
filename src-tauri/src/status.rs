@@ -9,6 +9,8 @@ pub enum Availability {
     NotImplemented,
     /// Simulated; never performs real actions.
     Mock,
+    /// Some real actions work; the UI says which.
+    Limited,
     /// Real integration is available.
     Available,
 }
@@ -31,7 +33,7 @@ pub fn current_status() -> AppStatus {
         speech_recognition: Availability::NotImplemented,
         speech_synthesis: Availability::NotImplemented,
         reasoning_model: Availability::NotImplemented,
-        computer_control: Availability::NotImplemented,
+        computer_control: Availability::Limited,
     }
 }
 
@@ -42,7 +44,7 @@ mod tests {
     #[test]
     fn status_does_not_overclaim_capabilities() {
         let s = current_status();
-        assert_eq!(s.computer_control, Availability::NotImplemented);
+        assert_eq!(s.computer_control, Availability::Limited);
         assert_eq!(s.reasoning_model, Availability::NotImplemented);
     }
 
@@ -50,6 +52,6 @@ mod tests {
     fn status_serialises_with_camel_case_and_snake_case_values() {
         let json = serde_json::to_value(current_status()).unwrap();
         assert_eq!(json["appVersion"], env!("CARGO_PKG_VERSION"));
-        assert_eq!(json["computerControl"], "not_implemented");
+        assert_eq!(json["computerControl"], "limited");
     }
 }

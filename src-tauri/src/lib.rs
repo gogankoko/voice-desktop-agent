@@ -1,6 +1,7 @@
 mod commands;
 mod prefs;
 mod status;
+mod tools;
 
 use tauri::Manager;
 
@@ -17,6 +18,7 @@ pub fn run() {
             commands::get_app_status,
             commands::get_preferences,
             commands::set_preferences,
+            commands::open_application,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
