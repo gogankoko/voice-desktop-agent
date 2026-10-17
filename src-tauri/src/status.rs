@@ -28,8 +28,8 @@ pub struct AppStatus {
     pub computer_control: Availability,
 }
 
-/// `stt_configured`: an Azure Speech key is stored in Credential Manager.
-pub fn current_status(stt_configured: bool) -> AppStatus {
+/// `stt_configured` / `llm_configured`: provider keys are stored in Credential Manager.
+pub fn current_status(stt_configured: bool, llm_configured: bool) -> AppStatus {
     AppStatus {
         app_version: env!("CARGO_PKG_VERSION"),
         os: std::env::consts::OS,
@@ -40,7 +40,11 @@ pub fn current_status(stt_configured: bool) -> AppStatus {
         },
         // Windows voices through WebView2; the UI downgrades this if no voice is installed.
         speech_synthesis: Availability::Available,
-        reasoning_model: Availability::NotImplemented,
+        reasoning_model: if llm_configured {
+            Availability::Available
+        } else {
+            Availability::NeedsSetup
+        },
         computer_control: Availability::Limited,
     }
 }
@@ -51,19 +55,19 @@ mod tests {
 
     #[test]
     fn status_does_not_overclaim_capabilities() {
-        let s = current_status(false);
+        let s = current_status(false, false);
         assert_eq!(s.computer_control, Availability::Limited);
-        assert_eq!(s.reasoning_model, Availability::NotImplemented);
+        assert_eq!(s.reasoning_model, Availability::NeedsSetup);
         assert_eq!(s.speech_recognition, Availability::NeedsSetup);
         assert_eq!(
-            current_status(true).speech_recognition,
+            current_status(true, true).speech_recognition,
             Availability::Available
         );
     }
 
     #[test]
     fn status_serialises_with_camel_case_and_snake_case_values() {
-        let json = serde_json::to_value(current_status(false)).unwrap();
+        let json = serde_json::to_value(current_status(false, false)).unwrap();
         assert_eq!(json["appVersion"], env!("CARGO_PKG_VERSION"));
         assert_eq!(json["computerControl"], "limited");
     }

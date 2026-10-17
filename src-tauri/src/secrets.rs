@@ -46,6 +46,20 @@ pub fn delete_azure_speech() -> windows::core::Result<()> {
     delete_generic(AZURE_SPEECH_TARGET)
 }
 
+const GEMINI_TARGET: &str = "VoiceDesktopAgent/Gemini";
+
+pub fn save_gemini_key(key: &str) -> windows::core::Result<()> {
+    write_generic(GEMINI_TARGET, "gemini", key.as_bytes())
+}
+
+pub fn load_gemini_key() -> windows::core::Result<Option<String>> {
+    Ok(read_generic(GEMINI_TARGET)?.and_then(|(_, blob)| String::from_utf8(blob).ok()))
+}
+
+pub fn delete_gemini_key() -> windows::core::Result<()> {
+    delete_generic(GEMINI_TARGET)
+}
+
 fn write_generic(target: &str, user: &str, secret: &[u8]) -> windows::core::Result<()> {
     let mut target_w: Vec<u16> = target.encode_utf16().chain([0]).collect();
     let mut user_w: Vec<u16> = user.encode_utf16().chain([0]).collect();

@@ -10,6 +10,11 @@ fn main() {
         "save_azure_speech",
         "clear_azure_speech",
         "get_speech_token",
+        "get_assistant_setup",
+        "save_gemini_key",
+        "clear_gemini_key",
+        "run_agent",
+        "cancel_agent",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("failed to run tauri-build");
