@@ -65,8 +65,9 @@ if ([Fg]::GetForegroundWindow() -ne $hwnd -or -not $box.Current.HasKeyboardFocus
   Start-Sleep -Milliseconds 300
   "OK: typed request"
   Click "Send"
-  Expect "open my browser"
-  $reply = $win.FindFirst($T::Descendants, (New-Object $P($A::NameProperty, "I heard you, but I can't act on requests yet. This early version isn't connected to an assistant or to your computer.")))
+  # Each transcript line is one list item whose accessible name includes the speaker.
+  if (Find-ByName "You: open my browser" $CT::ListItem) { "OK: request shown in transcript" } else { "FAIL: request not in transcript"; $failed = $true }
+  $reply = Find-ByName "Assistant: I heard you, but I can't act on requests yet. This early version isn't connected to an assistant or to your computer." $CT::ListItem
   if ($reply) { "OK: honest not-connected reply shown" } else { "FAIL: reply not shown"; $failed = $true }
 }
 if ($failed) { exit 1 }

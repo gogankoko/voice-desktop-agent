@@ -22,6 +22,12 @@ type View = "main" | "help" | "settings";
 const NOT_CONNECTED_REPLY =
   "I heard you, but I can't act on requests yet. This early version isn't connected to an assistant or to your computer.";
 
+const TEXT_SIZE_LABEL: Record<TextSize, string> = {
+  normal: "Normal",
+  large: "Large",
+  extra_large: "Extra large",
+};
+
 const AVAILABILITY_TEXT: Record<Availability, string> = {
   not_implemented: "Not available yet",
   mock: "Practice mode (pretend only)",
@@ -203,19 +209,21 @@ export default function App() {
       {view === "settings" && (
         <main className="main panel">
           <h2>Settings</h2>
-          <label htmlFor="text-size">Text size</label>
-          <select
-            id="text-size"
-            value={textSize}
-            onChange={(e) => {
-              const parsed = textSizeSchema.safeParse(e.target.value);
-              if (parsed.success) changeTextSize(parsed.data);
-            }}
-          >
-            <option value="normal">Normal</option>
-            <option value="large">Large</option>
-            <option value="extra_large">Extra large</option>
-          </select>
+          <fieldset className="choices">
+            <legend>Text size</legend>
+            {textSizeSchema.options.map((size) => (
+              <label key={size} className="choice">
+                <input
+                  type="radio"
+                  name="text-size"
+                  value={size}
+                  checked={textSize === size}
+                  onChange={() => changeTextSize(size)}
+                />
+                {TEXT_SIZE_LABEL[size]}
+              </label>
+            ))}
+          </fieldset>
           {prefsError && <p role="alert">{prefsError}</p>}
 
           <h3>What this version can do</h3>
