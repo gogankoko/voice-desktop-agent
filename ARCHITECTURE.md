@@ -15,8 +15,10 @@ No local HTTP server: the UI talks to Rust only through Tauri commands and event
 │  status.rs     honest capability report                                              │
 │  prefs.rs      SQLite (rusqlite, bundled) preferences in %APPDATA%\com.voiceagent…   │
 │  [planned] agent/      orchestrator: plan, risk-classify, confirm, execute, verify   │
-│  [planned] tools/      typed tool registry, one module per tool, risk level per tool │
+│  tools/        risk levels; open_app.rs (allowlisted launch + verify); win.rs (Win32)│
 │  [planned] uia/        Windows UI Automation (windows crate)                         │
+│  [planned] agent/ will own intent→plan; today src/core/intents.ts is a fixed-phrase  │
+│            stand-in that can only select allowlisted tools                           │
 │  [planned] voice/      STT/TTS provider traits + mock + real adapters                │
 │  [planned] secrets/    Windows Credential Manager                                    │
 │  [planned] store/      SQLite: preferences, optional task summaries                  │
@@ -53,7 +55,7 @@ plus `paused`, `recovering`, `cancelled`. See `src/core/conversation/machine.ts`
 
 ## Planned native dependencies (to be verified before adding)
 
-- `windows` crate (Microsoft, MIT/Apache-2.0): UI Automation, foreground window, process launch. Preferred over third-party `uiautomation` wrappers so we depend on the official bindings.
+- `windows` crate 0.62 (Microsoft, MIT/Apache-2.0): foreground window, process path, file associations; UI Automation next. Preferred over third-party `uiautomation` wrappers so we depend on the official bindings. **Added in Phase 4.**
 - Credential storage: `keyring` crate with the Windows Credential Manager backend, or direct `windows` Credential APIs.
 - SQLite: `rusqlite` 0.40 with the bundled feature (MIT; SQLite is public domain). **Added in Phase 2.**
 - Speech providers: chosen in Phase 3 after checking current docs, pricing and streaming support. Adding a paid provider needs owner approval.
