@@ -2,7 +2,7 @@
 
 A Windows 11 desktop assistant you talk to like a phone call. It opens apps, reads the screen, and helps with everyday tasks, and it always asks before anything important.
 
-> **Status: early foundation (Phase 2).** The app builds and runs, with an accessible main screen and typed native IPC. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
+> **Status: foundation complete (Phases 1–2).** The app builds, installs and runs, with an accessible main screen, typed native IPC and saved settings. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
 
 ## Prerequisites (Windows 11 x64)
 
@@ -27,8 +27,12 @@ npm run tauri dev        # launches the desktop app (first Rust build takes a fe
 npm test                 # frontend unit tests (state machine, IPC schemas)
 npm run test:rust        # Rust unit tests
 npm run build            # type-check + production frontend build
-# With the app running:
-powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1   # real desktop smoke test via UI Automation
+# Real desktop smoke tests via UI Automation (after `npm run tauri build`):
+Start-Process src-tauri	arget
+eleaseoice-desktop-agent.exe
+powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1    # UI, IPC, typed request
+# close the app, then:
+powershell -ExecutionPolicy Bypass -File scripts/smoke-prefs.ps1   # setting survives restart (launches the app itself)
 ```
 
 The smoke test drives the real window through Windows UI Automation. It only types if the app is the foreground window, and otherwise skips that step and says so.
@@ -38,6 +42,8 @@ The smoke test drives the real window through Windows UI Automation. It only typ
 ```powershell
 npm run tauri build      # NSIS installer in src-tauri/target/release/bundle/nsis/
 ```
+
+The first build downloads the NSIS tools from Tauri's GitHub releases (hash-verified) into Tauri's cache. The installer is per-user and needs no admin rights. It is unsigned, so expect a SmartScreen warning.
 
 ## Docs
 

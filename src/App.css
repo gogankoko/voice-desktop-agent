@@ -229,6 +229,45 @@ button[aria-current="page"] {
   min-width: 0;
 }
 
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem 1rem;
+  margin: 0;
+}
+
+.choices legend {
+  font-weight: 600;
+  padding: 0 0.4em;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 48px;
+  padding: 0 1em;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.choice:has(input:checked) {
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+.choice input {
+  width: 1.4em;
+  height: 1.4em;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .capabilities {
   display: grid;
   grid-template-columns: max-content 1fr;

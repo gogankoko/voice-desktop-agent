@@ -10,7 +10,7 @@
 ## Tauri boundary (in force now)
 
 - No `opener`, `shell`, `fs`, `http` or `process` plugins.
-- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only).
+- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only), `get_preferences`, `set_preferences` (enum-typed, `deny_unknown_fields`).
 - CSP: `default-src 'self'`, no remote scripts, frames or form posts. Prototype freezing is on.
 - All IPC responses are validated with zod in `src/ipc/*`. Inputs to future commands are validated in Rust.
 

@@ -1,0 +1,6 @@
+# Store text with LF in the repo; check out with LF too so tools see identical bytes everywhere.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary

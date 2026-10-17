@@ -7,6 +7,8 @@
     "core:app:default",
     "core:event:default",
     "core:window:default",
-    "allow-get-app-status"
+    "allow-get-app-status",
+    "allow-get-preferences",
+    "allow-set-preferences"
   ]
 }

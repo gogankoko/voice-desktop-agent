@@ -1,6 +1,13 @@
 import { type FormEvent, useEffect, useReducer, useRef, useState } from "react";
 import { initialState, isActive, transition } from "./core/conversation/machine";
 import { type AppStatus, type Availability, getAppStatus } from "./ipc/appStatus";
+import {
+  TEXT_SCALE,
+  type TextSize,
+  getPreferences,
+  setPreferences,
+  textSizeSchema,
+} from "./ipc/preferences";
 import { PHASE_TEXT } from "./ui/phaseText";
 import "./App.css";
 
@@ -15,6 +22,12 @@ type View = "main" | "help" | "settings";
 const NOT_CONNECTED_REPLY =
   "I heard you, but I can't act on requests yet. This early version isn't connected to an assistant or to your computer.";
 
+const TEXT_SIZE_LABEL: Record<TextSize, string> = {
+  normal: "Normal",
+  large: "Large",
+  extra_large: "Extra large",
+};
+
 const AVAILABILITY_TEXT: Record<Availability, string> = {
   not_implemented: "Not available yet",
   mock: "Practice mode (pretend only)",
@@ -28,18 +41,32 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [view, setView] = useState<View>("main");
-  const [textScale, setTextScale] = useState(1);
+  const [textSize, setTextSize] = useState<TextSize>("normal");
+  const [prefsError, setPrefsError] = useState<string | null>(null);
   const nextId = useRef(1);
 
   useEffect(() => {
     getAppStatus()
       .then(setStatus)
       .catch(() => setStatusError("The app couldn't check which features are available."));
+    getPreferences()
+      .then((p) => setTextSize(p.textSize))
+      .catch((e) => setPrefsError(errorText(e, "Your settings couldn't be loaded.")));
   }, []);
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--text-scale", String(textScale));
-  }, [textScale]);
+    document.documentElement.style.setProperty("--text-scale", String(TEXT_SCALE[textSize]));
+  }, [textSize]);
+
+  function changeTextSize(next: TextSize) {
+    const previous = textSize;
+    setTextSize(next);
+    setPrefsError(null);
+    setPreferences({ textSize: next }).catch((e) => {
+      setTextSize(previous);
+      setPrefsError(errorText(e, "Your settings couldn't be saved."));
+    });
+  }
 
   // Without a reasoning model, every request gets an honest "not yet" reply.
   useEffect(() => {
@@ -182,16 +209,22 @@ export default function App() {
       {view === "settings" && (
         <main className="main panel">
           <h2>Settings</h2>
-          <label htmlFor="text-size">Text size</label>
-          <select
-            id="text-size"
-            value={textScale}
-            onChange={(e) => setTextScale(Number(e.target.value))}
-          >
-            <option value={1}>Normal</option>
-            <option value={1.2}>Large</option>
-            <option value={1.4}>Extra large</option>
-          </select>
+          <fieldset className="choices">
+            <legend>Text size</legend>
+            {textSizeSchema.options.map((size) => (
+              <label key={size} className="choice">
+                <input
+                  type="radio"
+                  name="text-size"
+                  value={size}
+                  checked={textSize === size}
+                  onChange={() => changeTextSize(size)}
+                />
+                {TEXT_SIZE_LABEL[size]}
+              </label>
+            ))}
+          </fieldset>
+          {prefsError && <p role="alert">{prefsError}</p>}
 
           <h3>What this version can do</h3>
           {statusError && <p role="alert">{statusError}</p>}
@@ -227,6 +260,11 @@ export default function App() {
       <StopShortcut onStop={onStop} enabled={isActive(state.phase)} />
     </div>
   );
+}
+
+/** Backend command errors are plain-language strings; anything else gets the fallback. */
+function errorText(e: unknown, fallback: string): string {
+  return typeof e === "string" && e.length > 0 ? e : fallback;
 }
 
 function StopShortcut({ onStop, enabled }: { onStop: () => void; enabled: boolean }) {
