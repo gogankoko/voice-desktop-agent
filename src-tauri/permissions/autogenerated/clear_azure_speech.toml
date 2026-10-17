@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-clear-azure-speech"
+description = "Enables the clear_azure_speech command without any pre-configured scope."
+commands.allow = ["clear_azure_speech"]
+
+[[permission]]
+identifier = "deny-clear-azure-speech"
+description = "Denies the clear_azure_speech command without any pre-configured scope."
+commands.deny = ["clear_azure_speech"]

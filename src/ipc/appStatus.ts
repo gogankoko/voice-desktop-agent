@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { z } from "zod";
 
 // Mirrors src-tauri/src/status.rs. Responses are validated rather than trusted.
-const availability = z.enum(["not_implemented", "mock", "limited", "available"]);
+const availability = z.enum(["not_implemented", "needs_setup", "mock", "limited", "available"]);
 
 export const appStatusSchema = z.object({
   appVersion: z.string(),

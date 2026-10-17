@@ -176,6 +176,71 @@ button[aria-current="page"] {
   color: var(--accent-text);
 }
 
+.mic-listening {
+  outline: 6px solid var(--accent);
+  outline-offset: 6px;
+  animation: listen-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes listen-pulse {
+  50% {
+    outline-offset: 12px;
+  }
+}
+
+.interim {
+  margin: 0;
+  font-size: 1.1em;
+  text-align: center;
+  max-width: 36em;
+}
+
+.hint-left {
+  color: var(--muted);
+}
+
+.speech-settings {
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.speech-settings h3 {
+  margin-top: 0;
+}
+
+.stacked-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 28em;
+}
+
+.stacked-form label {
+  font-weight: 600;
+  margin-top: 0.4rem;
+}
+
+.stacked-form button {
+  margin-top: 0.75rem;
+  align-self: flex-start;
+}
+
+details {
+  margin-top: 0.75rem;
+}
+
+summary {
+  cursor: pointer;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+}
+
+.toggle {
+  align-self: flex-start;
+}
+
 .mic-icon {
   font-size: 2.5em;
 }

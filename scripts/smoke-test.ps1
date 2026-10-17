@@ -1,5 +1,6 @@
 # Desktop smoke test: drives the running app through Windows UI Automation.
-# Has no side effects outside the app (the request it types is deliberately unrecognised).
+# No side effects outside the app (the request it types is deliberately unrecognised),
+# except that the reply is read aloud if "Read my replies aloud" is on.
 # Usage: start the app, then: powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\uia-helpers.ps1"
@@ -14,6 +15,8 @@ Click $win "Settings"
 # These come from the get_app_status IPC round-trip, validated by zod.
 Check (Find-ByName $win "Not available yet") "sees capability report" "capability report missing"
 Check (Find-ByName $win "Only opening your web browser, so far") "computer control reported as limited" "computer control status missing"
+Check (Find-ByName $win "Available (Windows voices)") "a Windows voice is installed for spoken replies" "no Windows voice found"
+Check (Find-ByName $win "Listening (Microsoft Azure Speech)") "listening setup section shown" "listening setup section missing"
 Check (Find-ByName $win "0.1.0") "sees version" "version missing"
 Click $win "Home"
 

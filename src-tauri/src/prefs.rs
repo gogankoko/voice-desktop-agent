@@ -35,10 +35,21 @@ impl TextSize {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Preferences {
     pub text_size: TextSize,
+    /// Read the assistant's replies aloud.
+    pub speak_replies: bool,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            text_size: TextSize::Normal,
+            speak_replies: true,
+        }
+    }
 }
 
 pub struct PrefsStore {
@@ -70,29 +81,40 @@ impl PrefsStore {
     /// Missing or unrecognised stored values fall back to defaults rather than failing.
     pub fn load(&self) -> rusqlite::Result<Preferences> {
         let conn = self.conn.lock().expect("prefs mutex poisoned");
-        let text_size: Option<String> = conn
-            .query_row(
-                "SELECT value FROM preferences WHERE key = 'text_size'",
-                [],
-                |r| r.get(0),
-            )
-            .optional()?;
+        let get = |key: &str| -> rusqlite::Result<Option<String>> {
+            conn.query_row("SELECT value FROM preferences WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()
+        };
+        let defaults = Preferences::default();
         Ok(Preferences {
-            text_size: text_size
+            text_size: get("text_size")?
                 .as_deref()
                 .and_then(TextSize::parse)
-                .unwrap_or_default(),
+                .unwrap_or(defaults.text_size),
+            speak_replies: match get("speak_replies")?.as_deref() {
+                Some("1") => true,
+                Some("0") => false,
+                _ => defaults.speak_replies,
+            },
         })
     }
 
     pub fn save(&self, prefs: &Preferences) -> rusqlite::Result<()> {
-        let conn = self.conn.lock().expect("prefs mutex poisoned");
-        conn.execute(
-            "INSERT INTO preferences (key, value) VALUES ('text_size', ?1)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![prefs.text_size.as_str()],
-        )?;
-        Ok(())
+        let mut conn = self.conn.lock().expect("prefs mutex poisoned");
+        let tx = conn.transaction()?;
+        for (key, value) in [
+            ("text_size", prefs.text_size.as_str()),
+            ("speak_replies", if prefs.speak_replies { "1" } else { "0" }),
+        ] {
+            tx.execute(
+                "INSERT INTO preferences (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, value],
+            )?;
+        }
+        tx.commit()
     }
 }
 
@@ -100,41 +122,44 @@ impl PrefsStore {
 mod tests {
     use super::*;
 
+    fn prefs(text_size: TextSize, speak_replies: bool) -> Preferences {
+        Preferences {
+            text_size,
+            speak_replies,
+        }
+    }
+
     #[test]
     fn defaults_when_nothing_saved() {
         let store = PrefsStore::open_in_memory().unwrap();
         assert_eq!(store.load().unwrap(), Preferences::default());
+        assert!(
+            Preferences::default().speak_replies,
+            "replies are spoken by default"
+        );
     }
 
     #[test]
     fn round_trips_and_overwrites() {
         let store = PrefsStore::open_in_memory().unwrap();
-        store
-            .save(&Preferences {
-                text_size: TextSize::Large,
-            })
-            .unwrap();
-        store
-            .save(&Preferences {
-                text_size: TextSize::ExtraLarge,
-            })
-            .unwrap();
-        assert_eq!(store.load().unwrap().text_size, TextSize::ExtraLarge);
+        store.save(&prefs(TextSize::Large, true)).unwrap();
+        store.save(&prefs(TextSize::ExtraLarge, false)).unwrap();
+        assert_eq!(store.load().unwrap(), prefs(TextSize::ExtraLarge, false));
     }
 
     #[test]
-    fn corrupt_stored_value_falls_back_to_default() {
+    fn corrupt_stored_values_fall_back_to_defaults() {
         let store = PrefsStore::open_in_memory().unwrap();
         store
             .conn
             .lock()
             .unwrap()
-            .execute(
-                "INSERT INTO preferences VALUES ('text_size', 'gigantic')",
-                [],
+            .execute_batch(
+                "INSERT INTO preferences VALUES ('text_size', 'gigantic');
+                 INSERT INTO preferences VALUES ('speak_replies', 'maybe');",
             )
             .unwrap();
-        assert_eq!(store.load().unwrap().text_size, TextSize::Normal);
+        assert_eq!(store.load().unwrap(), Preferences::default());
     }
 
     #[test]
@@ -144,23 +169,25 @@ mod tests {
         let path = dir.join("test.db");
         PrefsStore::open(&path)
             .unwrap()
-            .save(&Preferences {
-                text_size: TextSize::Large,
-            })
+            .save(&prefs(TextSize::Large, false))
             .unwrap();
         assert_eq!(
-            PrefsStore::open(&path).unwrap().load().unwrap().text_size,
-            TextSize::Large
+            PrefsStore::open(&path).unwrap().load().unwrap(),
+            prefs(TextSize::Large, false)
         );
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn rejects_invalid_input_from_frontend() {
-        assert!(serde_json::from_str::<Preferences>(r#"{"textSize":"huge"}"#).is_err());
-        assert!(serde_json::from_str::<Preferences>(r#"{"textSize":1.4}"#).is_err());
-        assert!(
-            serde_json::from_str::<Preferences>(r#"{"textSize":"large","extra":true}"#).is_err()
-        );
+        for bad in [
+            r#"{"textSize":"large"}"#,
+            r#"{"textSize":"large","speakReplies":"yes"}"#,
+            r#"{"textSize":"huge","speakReplies":true}"#,
+            r#"{"textSize":1.4,"speakReplies":true}"#,
+            r#"{"textSize":"large","speakReplies":true,"extra":true}"#,
+        ] {
+            assert!(serde_json::from_str::<Preferences>(bad).is_err(), "{bad}");
+        }
     }
 }

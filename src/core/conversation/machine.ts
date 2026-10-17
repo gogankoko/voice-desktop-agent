@@ -70,6 +70,7 @@ export const initialState: ConversationState = {
 /** Phases where the user may start a new request (barge-in allowed while speaking). */
 const READY_FOR_INPUT: ReadonlySet<Phase> = new Set(["idle", "cancelled", "speaking"]);
 const CAN_FAIL: ReadonlySet<Phase> = new Set([
+  "listening",
   "transcribing",
   "understanding",
   "planning",

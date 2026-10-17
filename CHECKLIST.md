@@ -17,11 +17,17 @@
 - [x] `.gitattributes` for consistent line endings
 - [ ] Component tests (jsdom + Testing Library), moved to Phase 8 hardening
 
-## Phase 3: Voice interface
-- [ ] STT/TTS provider traits in Rust; visibly labelled mock provider
-- [ ] Provider choice (after a docs, pricing and licensing review; needs approval if paid)
-- [ ] Credential Manager storage and a configuration screen
-- [ ] Mic permission flow and listening indicator
+## Phase 3: Voice interface (code complete; real-voice test pending an Azure key)
+- [x] Provider review (2026-10-18): Windows built-in speech recognition needs MSIX package identity, so it's not usable with our installer. Owner chose **Azure AI Speech** (F0 free tier), English
+- [x] Provider-independent `SpeechRecognizer` / `SpeechSynthesizer` interfaces with mocks (`src/voice/`)
+- [x] Azure key in Windows Credential Manager; tested against Azure before saving; frontend only gets 10-minute tokens
+- [x] Settings: Azure setup with instructions, remove key, "Read my replies aloud"
+- [x] Spoken replies with on-device Windows voices; Stop, Esc and mic barge-in silence them
+- [x] Listening indicator: button text, symbol, ring, status line, live words; mic only on while "Listening"
+- [x] SDK audio processor served from the app (no CSP loosening)
+- [x] Fake-key rejection test: `scripts/smoke-speech-setup.ps1` (needs the app in the foreground)
+- [ ] **Real voice test with the owner's Azure key and microphone**
+- [ ] Mock providers exposed as a visible "practice mode" in the UI (currently tests only)
 
 ## Phase 4: First real computer tool ✅
 - [x] Win32 helpers via the official `windows` crate: foreground window, process path, default https handler
@@ -36,7 +42,7 @@
 See the master prompt §14. Not started.
 
 ## Known limitations
-- No voice input or output and no reasoning model. The only computer action is opening the default browser, triggered by a few fixed typed phrases.
+- Listening needs the owner's Azure Speech key (see docs/azure-speech-setup.md). No reasoning model yet. The only computer action is opening the default browser, triggered by a few fixed typed phrases.
 - If the browser was already in front, verification can't tell a new window from the existing one.
 - The smoke test's typing step needs the app in the foreground (Windows foreground lock). Launching the app just before the test usually satisfies this.
 - The installer is unsigned, so Windows SmartScreen will warn when it runs. Code signing comes in Phase 8.
