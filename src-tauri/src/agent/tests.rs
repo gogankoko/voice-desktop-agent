@@ -334,3 +334,42 @@ fn empty_and_oversized_requests_are_rejected() {
     }
     assert_eq!(model.calls(), 0);
 }
+
+/// Live end-to-end loop with the real model but a FAKE desktop (nothing is launched).
+/// Proves function calling, verbatim step replay (thought signatures) and the final reply.
+/// Run: cargo test --manifest-path src-tauri/Cargo.toml live_agent -- --ignored --nocapture
+#[test]
+#[ignore = "live call using the owner's stored Gemini key"]
+fn live_agent_round_trip_with_fake_desktop() {
+    let key = crate::secrets::load_gemini_key()
+        .unwrap()
+        .expect("a Gemini key is stored");
+    let model = super::gemini::Gemini::new(reqwest::Client::new(), key);
+    let desk = FakeDesktop {
+        verified: true,
+        ..Default::default()
+    };
+    let cancel = Cancel::default();
+    let r = tauri::async_runtime::block_on(run_task(
+        &model,
+        &desk,
+        &[],
+        "Could you get the internet up for me please?",
+        &cancel,
+        |tool| println!("executing: {tool}"),
+    ));
+    match r {
+        Err(e) => panic!("model error: {e:?} ({})", e.user_message()),
+        Ok((out, _)) => {
+            println!("actions: {:?}", out.actions);
+            println!("reply: {}", out.reply);
+            assert_eq!(
+                desk.opened.load(Ordering::SeqCst),
+                1,
+                "expected exactly one open"
+            );
+            assert!(out.actions[0].verified);
+            assert!(!out.reply.is_empty());
+        }
+    }
+}

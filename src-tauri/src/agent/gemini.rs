@@ -3,6 +3,7 @@
 //! conversation each time. Shapes follow Google's published OpenAPI spec (2026-10).
 
 use std::future::Future;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -12,6 +13,10 @@ use super::registry;
 
 /// Pinned rather than a `-latest` alias so behaviour doesn't change underneath us.
 pub const MODEL: &str = "gemini-3.8-flash";
+/// Used when the primary model is overloaded or rate-limited at the start of a request.
+/// Separate free-tier quota, cheaper, somewhat less capable.
+pub const FALLBACK_MODEL: &str = "gemini-3.5-flash-lite";
+const RETRY_DELAY: Duration = Duration::from_millis(1500);
 const ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const MODELS_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -36,6 +41,8 @@ pub struct ModelTurn {
 pub enum ModelError {
     Auth,
     RateLimited,
+    /// HTTP 503: Google says the model is under high demand.
+    Overloaded,
     Network,
     Server(u16),
     BadResponse,
@@ -50,6 +57,9 @@ impl ModelError {
             }
             ModelError::Network => {
                 "I couldn't reach the assistant service. Please check the internet connection."
+            }
+            ModelError::Overloaded => {
+                "Google's assistant service is very busy right now. Please try again in a minute."
             }
             ModelError::Server(_) => "The assistant service had a problem. Please try again in a moment.",
             ModelError::BadResponse => {
@@ -69,20 +79,100 @@ pub trait ChatModel {
     ) -> impl Future<Output = Result<ModelTurn, ModelError>> + Send;
 }
 
+/// One `Gemini` per user request: once a request falls back to another model, it stays
+/// on that model, because thought signatures are tied to the model that produced them.
 pub struct Gemini {
     http: reqwest::Client,
     key: String,
+    model: Mutex<&'static str>,
 }
 
 impl Gemini {
     pub fn new(http: reqwest::Client, key: String) -> Self {
-        Self { http, key }
+        Self {
+            http,
+            key,
+            model: Mutex::new(MODEL),
+        }
+    }
+
+    async fn send(&self, model: &'static str, input: &[Value]) -> Result<ModelTurn, ModelError> {
+        let resp = self
+            .http
+            .post(ENDPOINT)
+            .header("x-goog-api-key", &self.key)
+            .timeout(REQUEST_TIMEOUT)
+            .header("Content-Type", "application/json")
+            .body(request_body(model, input).to_string())
+            .send()
+            .await
+            .map_err(|e| {
+                eprintln!("gemini request failed: {}", e.without_url());
+                ModelError::Network
+            })?;
+        let status = resp.status();
+        if !status.is_success() {
+            eprintln!("gemini ({model}) returned HTTP {}", status.as_u16());
+            return Err(match status.as_u16() {
+                401 | 403 => ModelError::Auth,
+                400 if is_key_problem(resp).await => ModelError::Auth,
+                429 => ModelError::RateLimited,
+                503 => ModelError::Overloaded,
+                s if s >= 500 => ModelError::Server(s),
+                _ => ModelError::BadResponse,
+            });
+        }
+        let bytes = resp.bytes().await.map_err(|_| ModelError::Network)?;
+        let body: Value = serde_json::from_slice(&bytes).map_err(|_| ModelError::BadResponse)?;
+        parse_interaction(&body)
     }
 }
 
-pub fn request_body(input: &[Value]) -> Value {
+/// True once the conversation contains steps tied to a specific model (thoughts, calls,
+/// results). Switching model is only safe before that.
+fn has_model_bound_steps(input: &[Value]) -> bool {
+    input.iter().any(|s| {
+        matches!(
+            s["type"].as_str(),
+            Some("thought" | "function_call" | "function_result")
+        )
+    })
+}
+
+/// Bounded retry policy: one retry after `delay` on transient server errors, then, if the
+/// request is still fresh, one attempt on the fallback model when the primary is
+/// overloaded or rate-limited. Returns the result and the model that produced it.
+pub async fn with_retry_and_fallback<F, Fut>(
+    current: &'static str,
+    fresh: bool,
+    delay: Duration,
+    mut attempt: F,
+) -> (Result<ModelTurn, ModelError>, &'static str)
+where
+    F: FnMut(&'static str) -> Fut,
+    Fut: Future<Output = Result<ModelTurn, ModelError>>,
+{
+    let mut result = attempt(current).await;
+    if matches!(result, Err(ModelError::Overloaded | ModelError::Server(_))) {
+        tokio::time::sleep(delay).await;
+        result = attempt(current).await;
+    }
+    if fresh
+        && current != FALLBACK_MODEL
+        && matches!(
+            result,
+            Err(ModelError::Overloaded | ModelError::RateLimited)
+        )
+    {
+        eprintln!("gemini: {current} unavailable, trying {FALLBACK_MODEL}");
+        return (attempt(FALLBACK_MODEL).await, FALLBACK_MODEL);
+    }
+    (result, current)
+}
+
+pub fn request_body(model: &str, input: &[Value]) -> Value {
     json!({
-        "model": MODEL,
+        "model": model,
         "input": input,
         "system_instruction": SYSTEM_INSTRUCTION,
         "tools": registry::declarations(),
@@ -96,33 +186,14 @@ pub fn request_body(input: &[Value]) -> Value {
 
 impl ChatModel for Gemini {
     async fn respond(&self, input: &[Value]) -> Result<ModelTurn, ModelError> {
-        let resp = self
-            .http
-            .post(ENDPOINT)
-            .header("x-goog-api-key", &self.key)
-            .timeout(REQUEST_TIMEOUT)
-            .header("Content-Type", "application/json")
-            .body(request_body(input).to_string())
-            .send()
-            .await
-            .map_err(|e| {
-                eprintln!("gemini request failed: {}", e.without_url());
-                ModelError::Network
-            })?;
-        let status = resp.status();
-        if !status.is_success() {
-            eprintln!("gemini returned HTTP {}", status.as_u16());
-            return Err(match status.as_u16() {
-                401 | 403 => ModelError::Auth,
-                400 if is_key_problem(resp).await => ModelError::Auth,
-                429 => ModelError::RateLimited,
-                s if s >= 500 => ModelError::Server(s),
-                _ => ModelError::BadResponse,
-            });
+        let current = *self.model.lock().expect("model lock");
+        let fresh = !has_model_bound_steps(input);
+        let (result, used) =
+            with_retry_and_fallback(current, fresh, RETRY_DELAY, |m| self.send(m, input)).await;
+        if result.is_ok() && used != current {
+            *self.model.lock().expect("model lock") = used;
         }
-        let bytes = resp.bytes().await.map_err(|_| ModelError::Network)?;
-        let body: Value = serde_json::from_slice(&bytes).map_err(|_| ModelError::BadResponse)?;
-        parse_interaction(&body)
+        result
     }
 }
 
@@ -288,9 +359,10 @@ mod tests {
 
     #[test]
     fn request_is_stateless_and_pinned() {
-        let body = request_body(&[
-            json!({"type": "user_input", "content": [{"type": "text", "text": "hi"}]}),
-        ]);
+        let body = request_body(
+            MODEL,
+            &[json!({"type": "user_input", "content": [{"type": "text", "text": "hi"}]})],
+        );
         assert_eq!(body["store"], false);
         assert_eq!(body["model"], MODEL);
         assert!(body.get("previous_interaction_id").is_none());
@@ -332,6 +404,175 @@ mod tests {
         // Never echo the key back.
         let err = normalise_key("AIzaSecretButShort").unwrap_err();
         assert!(!err.contains("AIzaSecret"));
+    }
+
+    fn ok_turn() -> Result<ModelTurn, ModelError> {
+        Ok(ModelTurn {
+            text: "hi".into(),
+            ..Default::default()
+        })
+    }
+
+    type PolicyRun = (
+        Result<ModelTurn, ModelError>,
+        &'static str,
+        Vec<&'static str>,
+    );
+
+    /// Runs the policy with scripted results per attempt; returns (result, model used, models tried).
+    fn policy(fresh: bool, script: Vec<Result<ModelTurn, ModelError>>) -> PolicyRun {
+        let script = Mutex::new(std::collections::VecDeque::from(script));
+        let tried = Mutex::new(vec![]);
+        let (r, used) = tauri::async_runtime::block_on(with_retry_and_fallback(
+            MODEL,
+            fresh,
+            Duration::ZERO,
+            |m| {
+                tried.lock().unwrap().push(m);
+                let next = script
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .expect("script exhausted");
+                async move { next }
+            },
+        ));
+        (r, used, tried.into_inner().unwrap())
+    }
+
+    #[test]
+    fn success_needs_no_retry() {
+        let (r, used, tried) = policy(true, vec![ok_turn()]);
+        assert!(r.is_ok());
+        assert_eq!((used, tried), (MODEL, vec![MODEL]));
+    }
+
+    #[test]
+    fn overloaded_retries_once_then_falls_back_when_fresh() {
+        let (r, used, tried) = policy(
+            true,
+            vec![
+                Err(ModelError::Overloaded),
+                Err(ModelError::Overloaded),
+                ok_turn(),
+            ],
+        );
+        assert!(r.is_ok());
+        assert_eq!(used, FALLBACK_MODEL);
+        assert_eq!(tried, vec![MODEL, MODEL, FALLBACK_MODEL]);
+    }
+
+    #[test]
+    fn transient_error_recovers_on_retry() {
+        let (r, used, tried) = policy(true, vec![Err(ModelError::Overloaded), ok_turn()]);
+        assert!(r.is_ok());
+        assert_eq!((used, tried.len()), (MODEL, 2));
+    }
+
+    #[test]
+    fn rate_limit_goes_straight_to_fallback() {
+        let (r, used, tried) = policy(true, vec![Err(ModelError::RateLimited), ok_turn()]);
+        assert!(r.is_ok());
+        assert_eq!(used, FALLBACK_MODEL);
+        assert_eq!(tried, vec![MODEL, FALLBACK_MODEL]);
+    }
+
+    #[test]
+    fn never_switches_model_mid_request() {
+        let (r, used, tried) = policy(
+            false,
+            vec![Err(ModelError::Overloaded), Err(ModelError::Overloaded)],
+        );
+        assert_eq!(r.unwrap_err(), ModelError::Overloaded);
+        assert_eq!((used, tried), (MODEL, vec![MODEL, MODEL]));
+    }
+
+    #[test]
+    fn auth_and_bad_responses_are_not_retried() {
+        for e in [ModelError::Auth, ModelError::BadResponse] {
+            let (r, _, tried) = policy(true, vec![Err(e.clone())]);
+            assert_eq!(r.unwrap_err(), e);
+            assert_eq!(tried.len(), 1);
+        }
+    }
+
+    #[test]
+    fn model_bound_steps_are_detected() {
+        let user = json!({"type": "user_input", "content": []});
+        let text = json!({"type": "model_output", "content": []});
+        assert!(!has_model_bound_steps(&[user.clone(), text]));
+        assert!(has_model_bound_steps(&[
+            user,
+            json!({"type": "thought", "signature": "x"})
+        ]));
+    }
+
+    /// Live diagnostic against Google with the key stored in Credential Manager.
+    /// Prints only HTTP status and Google's response (never the key).
+    /// Run: cargo test --manifest-path src-tauri/Cargo.toml live_gemini -- --ignored --nocapture
+    #[test]
+    #[ignore = "live call using the owner's stored Gemini key"]
+    fn live_gemini_request_variants() {
+        let key = crate::secrets::load_gemini_key()
+            .unwrap()
+            .expect("a Gemini key is stored");
+        let http = reqwest::Client::new();
+        let user = json!([{"type": "user_input", "content": [{"type": "text", "text": "Say hello in five words."}]}]);
+        let full = request_body(MODEL, user.as_array().unwrap());
+        let mut variants: Vec<(&str, Value)> = vec![
+            (
+                "minimal (model + string input)",
+                json!({"model": MODEL, "input": "Say hello in five words."}),
+            ),
+            (
+                "+ steps input",
+                json!({"model": MODEL, "input": user, "store": false}),
+            ),
+            (
+                "+ store:false",
+                json!({"model": MODEL, "input": user, "store": false}),
+            ),
+            (
+                "+ system_instruction",
+                json!({"model": MODEL, "input": user, "store": false, "system_instruction": SYSTEM_INSTRUCTION}),
+            ),
+            (
+                "+ tools",
+                json!({"model": MODEL, "input": user, "store": false, "tools": registry::declarations()}),
+            ),
+            (
+                "+ generation_config",
+                json!({"model": MODEL, "input": user, "store": false, "generation_config": full["generation_config"]}),
+            ),
+        ];
+        variants.push(("full app request", full));
+        variants.push((
+            "full request on fallback model",
+            request_body(FALLBACK_MODEL, user.as_array().unwrap()),
+        ));
+        tauri::async_runtime::block_on(async {
+            for (label, body) in variants {
+                let resp = http
+                    .post(ENDPOINT)
+                    .header("x-goog-api-key", &key)
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .send()
+                    .await;
+                match resp {
+                    Err(e) => println!("[{label}] network error: {}", e.without_url()),
+                    Ok(r) => {
+                        let status = r.status().as_u16();
+                        let text = r.text().await.unwrap_or_default();
+                        let short: String = text.chars().take(600).collect();
+                        println!(
+                            "[{label}] HTTP {status}: {short}
+"
+                        );
+                    }
+                }
+            }
+        });
     }
 
     #[test]
