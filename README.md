@@ -33,6 +33,8 @@ eleaseoice-desktop-agent.exe
 powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1          # UI, IPC, typed request (no side effects)
 # VISIBLE SIDE EFFECT, opens your default browser:
 powershell -ExecutionPolicy Bypass -File scripts/smoke-open-browser.ps1
+# Sends a deliberately FAKE key to Microsoft and checks it is rejected and not stored:
+powershell -ExecutionPolicy Bypass -File scripts/smoke-speech-setup.ps1
 # close the app, then:
 powershell -ExecutionPolicy Bypass -File scripts/smoke-prefs.ps1   # setting survives restart (launches the app itself)
 ```
@@ -46,6 +48,10 @@ npm run tauri build      # NSIS installer in src-tauri/target/release/bundle/nsi
 ```
 
 The first build downloads the NSIS tools from Tauri's GitHub releases (hash-verified) into Tauri's cache. The installer is per-user and needs no admin rights. It is unsigned, so expect a SmartScreen warning.
+
+## Set up listening
+
+Talking to the assistant uses Microsoft Azure AI Speech (free F0 tier). See [docs/azure-speech-setup.md](docs/azure-speech-setup.md). Spoken replies use Windows' built-in voices and need no setup.
 
 ## Docs
 

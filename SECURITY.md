@@ -10,8 +10,8 @@
 ## Tauri boundary (in force now)
 
 - No `opener`, `shell`, `fs`, `http` or `process` plugins.
-- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only), `get_preferences`, `set_preferences` (enum-typed, `deny_unknown_fields`), `open_application` (enum allowlist: `default_browser` only; Rust resolves and validates the executable from the Windows https association and launches it without a shell or arguments; refuses non-low-risk apps until confirmations exist; one launch at a time).
-- CSP: `default-src 'self'`, no remote scripts, frames or form posts. Prototype freezing is on.
+- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only), `get_preferences`, `set_preferences` (enum-typed, `deny_unknown_fields`), `get_speech_setup`, `save_azure_speech` (validated region and key, tested against Azure before storing, key never returned), `clear_azure_speech`, `get_speech_token` (10-minute Azure STS token, cached 9 minutes), `open_application` (enum allowlist: `default_browser` only; Rust resolves and validates the executable from the Windows https association and launches it without a shell or arguments; refuses non-low-risk apps until confirmations exist; one launch at a time).
+- CSP: `default-src 'self'`, no remote scripts, frames or form posts. Beyond IPC, `connect-src` allows only `wss://*.stt.speech.microsoft.com`. The Speech SDK's audio worklet is served from the app (`public/speech-processor.js`) instead of a `blob:` URL. Prototype freezing is on.
 - All IPC responses are validated with zod in `src/ipc/*`. Inputs to future commands are validated in Rust.
 
 ## Action risk levels (enforced by the planned tool registry)
@@ -31,7 +31,8 @@ Arbitrary shell or PowerShell, running generated code, unrestricted JavaScript i
 ## Data handling
 
 - Raw audio, full screenshots, passwords, payment data and full transcripts are not stored by default.
-- Provider API keys go in Windows Credential Manager. Never in the frontend bundle, committed config, test fixtures or logs.
+- Provider API keys go in Windows Credential Manager (`VoiceDesktopAgent/AzureSpeech`). Never in the frontend bundle, committed config, test fixtures or logs. Rust types holding keys or tokens redact them in `Debug` output. The frontend receives only short-lived tokens.
+- Microphone audio goes to Azure only while the mic button shows Listening. It is not recorded or stored. Silence or unclear speech is never treated as a request or as consent.
 - Logs are redacted for sensitive fields.
 - Mock modes are visibly labelled and never claim to have acted on the real computer.
 

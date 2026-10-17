@@ -20,7 +20,10 @@ export class AzureRecognizer implements SpeechRecognizer {
     config.speechRecognitionLanguage = "en-US";
     config.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, INITIAL_SILENCE_MS);
     config.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, END_SILENCE_MS);
-    const recognizer = new sdk.SpeechRecognizer(config, sdk.AudioConfig.fromDefaultMicrophoneInput());
+    const audio = sdk.AudioConfig.fromDefaultMicrophoneInput();
+    // Load the SDK's audio processor from our own origin instead of a blob: URL (blocked by CSP).
+    audio.setProperty("MICROPHONE-WorkletSourceUrl", "/speech-processor.js");
+    const recognizer = new sdk.SpeechRecognizer(config, audio);
     this.recognizer = recognizer;
     recognizer.recognizing = (_s, e) => onInterim(e.result.text);
 

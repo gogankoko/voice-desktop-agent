@@ -19,8 +19,8 @@ No local HTTP server: the UI talks to Rust only through Tauri commands and event
 │  [planned] uia/        Windows UI Automation (windows crate)                         │
 │  [planned] agent/ will own intent→plan; today src/core/intents.ts is a fixed-phrase  │
 │            stand-in that can only select allowlisted tools                           │
-│  [planned] voice/      STT/TTS provider traits + mock + real adapters                │
-│  [planned] secrets/    Windows Credential Manager                                    │
+│  speech.rs     Azure key validation, STS token issue + cache                         │
+│  secrets.rs    Windows Credential Manager (generic credentials)                      │
 │  [planned] store/      SQLite: preferences, optional task summaries                  │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -36,6 +36,15 @@ No local HTTP server: the UI talks to Rust only through Tauri commands and event
 | Conversation state machine is pure TS | Fully unit-testable; the UI mirrors it. Once orchestration moves to Rust, Rust becomes the source of truth and emits state events. |
 | Strict CSP, `freezePrototype` | Limits damage if untrusted content ever reaches the DOM. |
 | NSIS bundle only | Per-user installer, no admin rights needed. |
+
+## Voice layer (src/voice)
+
+`SpeechRecognizer` and `SpeechSynthesizer` interfaces; the conversation code (`listenTurn`, `runRequest`) depends only on these.
+
+- **Listening: Azure AI Speech** via the official JS Speech SDK in the WebView, authenticated with a 10-minute token from Rust (`get_speech_token`), so the resource key stays in Rust. One utterance per press (`recognizeOnceAsync`), live interim words, 8 s initial / 1.5 s end silence. Lazy-loaded.
+- **Speaking: Windows voices** via WebView2 `speechSynthesis`: free, on-device, prefers a "Natural" en-US voice. Cancelled by Stop, Esc, the mic button (barge-in) and new typed requests.
+- Why not Windows' own speech recognition: `Windows.Media.SpeechRecognition` requires MSIX package identity (Microsoft Learn, 2026); our NSIS build is unpackaged. Revisit if we move to MSIX.
+- Mocks (`src/voice/mock.ts`) drive deterministic tests.
 
 ## Conversation states
 
@@ -57,5 +66,7 @@ plus `paused`, `recovering`, `cancelled`. See `src/core/conversation/machine.ts`
 
 - `windows` crate 0.62 (Microsoft, MIT/Apache-2.0): foreground window, process path, file associations; UI Automation next. Preferred over third-party `uiautomation` wrappers so we depend on the official bindings. **Added in Phase 4.**
 - Credential storage: `keyring` crate with the Windows Credential Manager backend, or direct `windows` Credential APIs.
+- HTTP: `reqwest` 0.13 with `native-tls` (Windows SChannel; avoids the aws-lc-rs C toolchain). **Added in Phase 3.**
+- Speech: `microsoft-cognitiveservices-speech-sdk` 1.52 (MIT). **Added in Phase 3.**
 - SQLite: `rusqlite` 0.40 with the bundled feature (MIT; SQLite is public domain). **Added in Phase 2.**
 - Speech providers: chosen in Phase 3 after checking current docs, pricing and streaming support. Adding a paid provider needs owner approval.

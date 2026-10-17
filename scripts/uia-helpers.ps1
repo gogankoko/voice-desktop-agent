@@ -10,21 +10,21 @@ public static class Fg {
 "@
 $A = [System.Windows.Automation.AutomationElement]
 $T = [System.Windows.Automation.TreeScope]
-$P = [System.Windows.Automation.PropertyCondition]
+$PropCond = [System.Windows.Automation.PropertyCondition]  # not $P: PowerShell names are case-insensitive, $p is common in callers
 $CT = [System.Windows.Automation.ControlType]
 $script:failed = $false
 
 function Find-AppWindow {
   for ($i = 0; $i -lt 30; $i++) {
-    $w = $A::RootElement.FindFirst($T::Children, (New-Object $P($A::NameProperty, "Voice Desktop Agent")))
+    $w = $A::RootElement.FindFirst($T::Children, (New-Object $PropCond($A::NameProperty, "Voice Desktop Agent")))
     if ($w) { return $w }
     Start-Sleep -Milliseconds 500
   }
 }
 
 function Find-ByName($win, $name, $type = $null) {
-  $cond = New-Object $P($A::NameProperty, $name)
-  if ($type) { $cond = New-Object System.Windows.Automation.AndCondition($cond, (New-Object $P($A::ControlTypeProperty, $type))) }
+  $cond = New-Object $PropCond($A::NameProperty, $name)
+  if ($type) { $cond = New-Object System.Windows.Automation.AndCondition($cond, (New-Object $PropCond($A::ControlTypeProperty, $type))) }
   for ($i = 0; $i -lt 20; $i++) {
     $e = $win.FindFirst($T::Descendants, $cond)
     if ($e) { return $e }
@@ -34,7 +34,7 @@ function Find-ByName($win, $name, $type = $null) {
 
 # Waits for a transcript list item whose accessible name matches a -like pattern.
 function Wait-ListItemLike($win, $pattern, $seconds = 15) {
-  $cond = New-Object $P($A::ControlTypeProperty, $CT::ListItem)
+  $cond = New-Object $PropCond($A::ControlTypeProperty, $CT::ListItem)
   $deadline = (Get-Date).AddSeconds($seconds)
   while ((Get-Date) -lt $deadline) {
     foreach ($e in $win.FindAll($T::Descendants, $cond)) {
