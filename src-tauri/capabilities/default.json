@@ -9,6 +9,7 @@
     "core:window:default",
     "allow-get-app-status",
     "allow-get-preferences",
-    "allow-set-preferences"
+    "allow-set-preferences",
+    "allow-open-application"
   ]
 }

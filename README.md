@@ -2,7 +2,7 @@
 
 A Windows 11 desktop assistant you talk to like a phone call. It opens apps, reads the screen, and helps with everyday tasks, and it always asks before anything important.
 
-> **Status: foundation complete (Phases 1–2).** The app builds, installs and runs, with an accessible main screen, typed native IPC and saved settings. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
+> **Status: Phase 4.** The app builds, installs and runs, with an accessible main screen and saved settings. Its first real computer action works: type **"open my browser"** and it opens your default browser and checks that it appeared. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
 
 ## Prerequisites (Windows 11 x64)
 
@@ -30,7 +30,9 @@ npm run build            # type-check + production frontend build
 # Real desktop smoke tests via UI Automation (after `npm run tauri build`):
 Start-Process src-tauri	arget
 eleaseoice-desktop-agent.exe
-powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1    # UI, IPC, typed request
+powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1          # UI, IPC, typed request (no side effects)
+# VISIBLE SIDE EFFECT, opens your default browser:
+powershell -ExecutionPolicy Bypass -File scripts/smoke-open-browser.ps1
 # close the app, then:
 powershell -ExecutionPolicy Bypass -File scripts/smoke-prefs.ps1   # setting survives restart (launches the app itself)
 ```

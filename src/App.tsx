@@ -1,5 +1,7 @@
 import { type FormEvent, useEffect, useReducer, useRef, useState } from "react";
 import { initialState, isActive, transition } from "./core/conversation/machine";
+import { matchIntent } from "./core/intents";
+import { runRequest } from "./core/runTask";
 import { type AppStatus, type Availability, getAppStatus } from "./ipc/appStatus";
 import {
   TEXT_SCALE,
@@ -8,6 +10,7 @@ import {
   setPreferences,
   textSizeSchema,
 } from "./ipc/preferences";
+import { openApplication } from "./ipc/tools";
 import { PHASE_TEXT } from "./ui/phaseText";
 import "./App.css";
 
@@ -19,9 +22,6 @@ interface Message {
 
 type View = "main" | "help" | "settings";
 
-const NOT_CONNECTED_REPLY =
-  "I heard you, but I can't act on requests yet. This early version isn't connected to an assistant or to your computer.";
-
 const TEXT_SIZE_LABEL: Record<TextSize, string> = {
   normal: "Normal",
   large: "Large",
@@ -31,6 +31,7 @@ const TEXT_SIZE_LABEL: Record<TextSize, string> = {
 const AVAILABILITY_TEXT: Record<Availability, string> = {
   not_implemented: "Not available yet",
   mock: "Practice mode (pretend only)",
+  limited: "Only opening your web browser, so far",
   available: "Available",
 };
 
@@ -44,6 +45,8 @@ export default function App() {
   const [textSize, setTextSize] = useState<TextSize>("normal");
   const [prefsError, setPrefsError] = useState<string | null>(null);
   const nextId = useRef(1);
+  // Incremented by Stop and by each new request; a task whose id is stale must not act or report.
+  const taskId = useRef(0);
 
   useEffect(() => {
     getAppStatus()
@@ -68,12 +71,16 @@ export default function App() {
     });
   }
 
-  // Without a reasoning model, every request gets an honest "not yet" reply.
   useEffect(() => {
-    if (state.phase !== "understanding") return;
-    addMessage("assistant", NOT_CONNECTED_REPLY);
-    dispatch({ type: "REPLY_READY" });
-  }, [state.phase]);
+    if (state.phase !== "understanding" || state.utterance === null) return;
+    const id = ++taskId.current;
+    void runRequest(matchIntent(state.utterance), {
+      dispatch,
+      say: (text) => addMessage("assistant", text),
+      openApplication,
+      isCurrent: () => taskId.current === id,
+    });
+  }, [state.phase, state.utterance]);
 
   // No speech synthesis yet: the reply is shown, so "speaking" completes at once.
   useEffect(() => {
@@ -94,6 +101,7 @@ export default function App() {
   }
 
   function onStop() {
+    taskId.current++;
     dispatch({ type: "STOP" });
     addMessage("assistant", "Okay, I've stopped.");
   }
@@ -123,8 +131,9 @@ export default function App() {
       </header>
 
       <div className="notice" role="note">
-        <strong>Early test version.</strong> This version can't hear you, speak, or control your
-        computer yet. You can type, and it will tell you honestly what it can and can't do.
+        <strong>Early test version.</strong> I can't hear you or speak yet, and so far the only
+        thing I can do on your computer is open your web browser. Type{" "}
+        <q>open my browser</q> to try it.
       </div>
 
       {view === "main" && (

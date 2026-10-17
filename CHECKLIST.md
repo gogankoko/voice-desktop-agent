@@ -11,7 +11,7 @@
 - [x] Conversation state machine with safety invariants (15 tests)
 - [x] Accessible main screen: large mic button (disabled, explained), status with text and symbol, transcript, text input, Help, Settings (text size, capability report), persistent Stop + Esc
 - [x] Desktop smoke test via UI Automation (`scripts/smoke-test.ps1`)
-- [x] Release build and NSIS installer built (2.07 MB per-user installer; install itself not yet tried)
+- [x] Release build and NSIS installer verified (installed per-user to %LOCALAPPDATA%\Voice Desktop Agent and ran)
 - [x] Text-size preference persisted in SQLite (`prefs.rs`), verified across restart (`scripts/smoke-prefs.ps1`)
 - [x] Text size uses radio buttons (all options visible, drivable via UIA SelectionItem)
 - [x] `.gitattributes` for consistent line endings
@@ -23,15 +23,20 @@
 - [ ] Credential Manager storage and a configuration screen
 - [ ] Mic permission flow and listening indicator
 
-## Phase 4: First real computer tool
-- [ ] `get_active_window` via the `windows` crate
-- [ ] `open_application` against an allowlist (default browser first), with verification
-- [ ] Foreground-window check enforced before any input simulation
+## Phase 4: First real computer tool ✅
+- [x] Win32 helpers via the official `windows` crate: foreground window, process path, default https handler
+- [x] `open_application` with an enum allowlist (default browser), low-risk gate, resolved .exe validation, launch without a shell, in-flight duplicate guard
+- [x] Verification: the launched program's window must reach the foreground within 8 s; otherwise the app says it couldn't confirm
+- [x] Fixed-phrase recogniser for typed requests (temporary until Phase 5) and a task runner that stays honest after Stop
+- [x] Real desktop test: `scripts/smoke-open-browser.ps1` opened Edge, verified by the app and independently
+- [ ] Foreground-window check enforced in Rust before any input simulation (lands with `type_text`)
+- [ ] `get_active_window` exposed as an agent tool (internal only for now; the orchestrator arrives in Phase 5)
 
 ## Phases 5–8
 See the master prompt §14. Not started.
 
 ## Known limitations
-- No voice input or output, no reasoning model, no computer control yet.
+- No voice input or output and no reasoning model. The only computer action is opening the default browser, triggered by a few fixed typed phrases.
+- If the browser was already in front, verification can't tell a new window from the existing one.
 - The smoke test's typing step needs the app in the foreground (Windows foreground lock). Launching the app just before the test usually satisfies this.
 - The installer is unsigned, so Windows SmartScreen will warn when it runs. Code signing comes in Phase 8.

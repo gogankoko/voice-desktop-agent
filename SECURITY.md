@@ -10,7 +10,7 @@
 ## Tauri boundary (in force now)
 
 - No `opener`, `shell`, `fs`, `http` or `process` plugins.
-- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only), `get_preferences`, `set_preferences` (enum-typed, `deny_unknown_fields`).
+- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only), `get_preferences`, `set_preferences` (enum-typed, `deny_unknown_fields`), `open_application` (enum allowlist: `default_browser` only; Rust resolves and validates the executable from the Windows https association and launches it without a shell or arguments; refuses non-low-risk apps until confirmations exist; one launch at a time).
 - CSP: `default-src 'self'`, no remote scripts, frames or form posts. Prototype freezing is on.
 - All IPC responses are validated with zod in `src/ipc/*`. Inputs to future commands are validated in Rust.
 

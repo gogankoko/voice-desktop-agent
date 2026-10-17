@@ -5,6 +5,7 @@ use tauri::State;
 
 use crate::prefs::{Preferences, PrefsStore};
 use crate::status::{AppStatus, current_status};
+use crate::tools::open_app::{self, AllowedApp, OpenResult};
 
 /// Reports which subsystems are actually available in this build so the UI
 /// never implies capabilities that do not exist yet.
@@ -33,4 +34,16 @@ pub fn set_preferences(
         "Your settings couldn't be saved.".to_string()
     })?;
     Ok(prefs)
+}
+
+/// Opens an allowlisted application. `app` is an enum, so the frontend cannot name
+/// arbitrary programs. Runs off the main thread because verification polls for seconds.
+#[tauri::command]
+pub async fn open_application(app: AllowedApp) -> Result<OpenResult, String> {
+    tauri::async_runtime::spawn_blocking(move || open_app::open(app))
+        .await
+        .map_err(|e| {
+            eprintln!("open_application task failed: {e}");
+            "Something went wrong while opening the app.".to_string()
+        })?
 }
