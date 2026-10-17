@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-speech-token"
+description = "Enables the get_speech_token command without any pre-configured scope."
+commands.allow = ["get_speech_token"]
+
+[[permission]]
+identifier = "deny-get-speech-token"
+description = "Denies the get_speech_token command without any pre-configured scope."
+commands.deny = ["get_speech_token"]

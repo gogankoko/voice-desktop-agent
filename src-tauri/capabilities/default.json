@@ -10,6 +10,10 @@
     "allow-get-app-status",
     "allow-get-preferences",
     "allow-set-preferences",
-    "allow-open-application"
+    "allow-open-application",
+    "allow-get-speech-setup",
+    "allow-save-azure-speech",
+    "allow-clear-azure-speech",
+    "allow-get-speech-token"
   ]
 }

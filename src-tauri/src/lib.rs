@@ -1,5 +1,7 @@
 mod commands;
 mod prefs;
+mod secrets;
+mod speech;
 mod status;
 mod tools;
 
@@ -12,6 +14,7 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             app.manage(prefs::PrefsStore::open(&dir.join("voice-agent.db"))?);
+            app.manage(speech::SpeechState::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -19,6 +22,10 @@ pub fn run() {
             commands::get_preferences,
             commands::set_preferences,
             commands::open_application,
+            commands::get_speech_setup,
+            commands::save_azure_speech,
+            commands::clear_azure_speech,
+            commands::get_speech_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

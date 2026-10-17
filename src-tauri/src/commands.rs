@@ -4,6 +4,7 @@
 use tauri::State;
 
 use crate::prefs::{Preferences, PrefsStore};
+use crate::speech::{self, SpeechSetup, SpeechState, SpeechToken};
 use crate::status::{AppStatus, current_status};
 use crate::tools::open_app::{self, AllowedApp, OpenResult};
 
@@ -11,7 +12,7 @@ use crate::tools::open_app::{self, AllowedApp, OpenResult};
 /// never implies capabilities that do not exist yet.
 #[tauri::command]
 pub fn get_app_status() -> AppStatus {
-    current_status()
+    current_status(speech::setup().configured)
 }
 
 #[tauri::command]
@@ -46,4 +47,30 @@ pub async fn open_application(app: AllowedApp) -> Result<OpenResult, String> {
             eprintln!("open_application task failed: {e}");
             "Something went wrong while opening the app.".to_string()
         })?
+}
+
+#[tauri::command]
+pub fn get_speech_setup() -> SpeechSetup {
+    speech::setup()
+}
+
+/// The key is tested against Azure before it is stored, and is never returned.
+#[tauri::command]
+pub async fn save_azure_speech(
+    state: State<'_, SpeechState>,
+    region: String,
+    key: String,
+) -> Result<SpeechSetup, String> {
+    speech::save(&state, &region, &key).await
+}
+
+#[tauri::command]
+pub fn clear_azure_speech(state: State<'_, SpeechState>) -> Result<SpeechSetup, String> {
+    speech::clear(&state)
+}
+
+/// Returns a short-lived (10 minute) Azure token, never the resource key.
+#[tauri::command]
+pub async fn get_speech_token(state: State<'_, SpeechState>) -> Result<SpeechToken, String> {
+    speech::token(&state).await
 }
