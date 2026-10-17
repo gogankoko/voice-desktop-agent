@@ -1,8 +1,10 @@
 import { type FormEvent, useEffect, useReducer, useRef, useState } from "react";
 import { type Phase, initialState, isActive, transition } from "./core/conversation/machine";
+import { runAgentRequest } from "./core/agentTurn";
 import { matchIntent } from "./core/intents";
 import { listenTurn } from "./core/listenTurn";
 import { runRequest } from "./core/runTask";
+import { type ActionReport, cancelAgent, onAgentExecuting, runAgent } from "./ipc/agent";
 import { type AppStatus, type Availability, getAppStatus } from "./ipc/appStatus";
 import {
   type Preferences,
@@ -13,6 +15,7 @@ import {
   textSizeSchema,
 } from "./ipc/preferences";
 import { openApplication } from "./ipc/tools";
+import { AssistantSettings } from "./ui/AssistantSettings";
 import { SpeechSettings } from "./ui/SpeechSettings";
 import { errorText } from "./ui/errorText";
 import { PHASE_TEXT } from "./ui/phaseText";
@@ -22,9 +25,13 @@ import "./App.css";
 
 interface Message {
   id: number;
-  from: "you" | "assistant";
+  /** "action": what the app itself observed happening on the computer (not spoken). */
+  from: "you" | "assistant" | "action";
   text: string;
+  ok?: boolean;
 }
+
+const SPEAKER: Record<Message["from"], string> = { you: "You", assistant: "Assistant", action: "Action" };
 
 type View = "main" | "help" | "settings";
 
@@ -36,7 +43,7 @@ const TEXT_SIZE_LABEL: Record<TextSize, string> = {
 
 const AVAILABILITY_TEXT: Record<Availability, string> = {
   not_implemented: "Not available yet",
-  needs_setup: "Needs setting up (see Listening below)",
+  needs_setup: "Needs setting up (see below)",
   mock: "Practice mode (pretend only)",
   limited: "Only opening your web browser, so far",
   available: "Available",
@@ -63,6 +70,8 @@ export default function App() {
   const recognizer = useRef<SpeechRecognizer | null>(null);
   const speakReplies = useRef(prefs.speakReplies);
   speakReplies.current = prefs.speakReplies;
+  const assistantReady = useRef(false);
+  assistantReady.current = status?.reasoningModel === "available";
 
   function refreshStatus() {
     getAppStatus()
@@ -99,6 +108,10 @@ export default function App() {
     setMessages((m) => [...m, { id: nextId.current++, from, text }]);
   }
 
+  function noteAction(a: ActionReport) {
+    setMessages((m) => [...m, { id: nextId.current++, from: "action", text: a.summary, ok: a.ok && a.verified }]);
+  }
+
   function say(text: string) {
     addMessage("assistant", text);
     if (speakReplies.current) synth.speak(text);
@@ -107,12 +120,21 @@ export default function App() {
   useEffect(() => {
     if (state.phase !== "understanding" || state.utterance === null) return;
     const id = ++taskId.current;
-    void runRequest(matchIntent(state.utterance), {
-      dispatch,
-      say,
-      openApplication,
-      isCurrent: () => taskId.current === id,
-    });
+    const isCurrent = () => taskId.current === id;
+    if (assistantReady.current) {
+      const text = state.utterance;
+      void runAgentRequest(text, {
+        runAgent: (t) => runAgent(id, t),
+        onExecuting: (cb) => onAgentExecuting(id, cb),
+        dispatch,
+        say,
+        note: noteAction,
+        isCurrent,
+      });
+    } else {
+      // No assistant key: fixed phrases only, handled locally.
+      void runRequest(matchIntent(state.utterance), { dispatch, say, openApplication, isCurrent });
+    }
   }, [state.phase, state.utterance]);
 
   // "Speaking" ends when the voice has finished (immediately if replies aren't read aloud).
@@ -161,6 +183,7 @@ export default function App() {
 
   function onStop() {
     taskId.current++;
+    void cancelAgent().catch(() => {});
     recognizer.current?.cancel();
     synth.cancel();
     setInterim("");
@@ -195,8 +218,8 @@ export default function App() {
       </header>
 
       <div className="notice" role="note">
-        <strong>Early test version.</strong> So far the only thing I can do on your computer is
-        open your web browser. Say or type <q>open my browser</q> to try it.
+        <strong>Early test version.</strong> You can talk to me in your own words, but so far the
+        only thing I can do on your computer is open your web browser.
       </div>
 
       {view === "main" && (
@@ -251,7 +274,8 @@ export default function App() {
               <ol aria-live="polite" aria-relevant="additions">
                 {messages.map((m) => (
                   <li key={m.id} className={`msg msg-${m.from}`}>
-                    <span className="msg-from">{m.from === "you" ? "You" : "Assistant"}:</span>{" "}
+                    <span className="msg-from">{SPEAKER[m.from]}:</span>{" "}
+                    {m.from === "action" && <span aria-hidden="true">{m.ok ? "✓ " : "⚠ "}</span>}
                     {m.text}
                   </li>
                 ))}
@@ -329,6 +353,7 @@ export default function App() {
           {prefsError && <p role="alert">{prefsError}</p>}
 
           <SpeechSettings onChanged={refreshStatus} />
+          <AssistantSettings onChanged={refreshStatus} />
 
           <h3>What this version can do</h3>
           {statusError && <p role="alert">{statusError}</p>}

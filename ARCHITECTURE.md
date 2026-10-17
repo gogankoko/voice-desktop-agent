@@ -17,8 +17,8 @@ No local HTTP server: the UI talks to Rust only through Tauri commands and event
 │  [planned] agent/      orchestrator: plan, risk-classify, confirm, execute, verify   │
 │  tools/        risk levels; open_app.rs (allowlisted launch + verify); win.rs (Win32)│
 │  [planned] uia/        Windows UI Automation (windows crate)                         │
-│  [planned] agent/ will own intent→plan; today src/core/intents.ts is a fixed-phrase  │
-│            stand-in that can only select allowlisted tools                           │
+│  agent/        mod.rs orchestrator (bounded loop, cancel, dedupe, history)           │
+│                gemini.rs Interactions API client · registry.rs tool gate · prompt.rs │
 │  speech.rs     Azure key validation, STS token issue + cache                         │
 │  secrets.rs    Windows Credential Manager (generic credentials)                      │
 │  [planned] store/      SQLite: preferences, optional task summaries                  │
@@ -45,6 +45,19 @@ No local HTTP server: the UI talks to Rust only through Tauri commands and event
 - **Speaking: Windows voices** via WebView2 `speechSynthesis`: free, on-device, prefers a "Natural" en-US voice. Cancelled by Stop, Esc, the mic button (barge-in) and new typed requests.
 - Why not Windows' own speech recognition: `Windows.Media.SpeechRecognition` requires MSIX package identity (Microsoft Learn, 2026); our NSIS build is unpackaged. Revisit if we move to MSIX.
 - Mocks (`src/voice/mock.ts`) drive deterministic tests.
+
+## Agent layer (src-tauri/src/agent)
+
+```
+user words ─► run_agent ─► Gemini (store:false) ─► proposed calls ─► registry::validate
+                                ▲                                         │ ok + low risk
+                                └──── function_result (verified, errors) ◄┴─ ToolExecutor (open_app)
+```
+
+- `ChatModel` trait: Gemini today; any provider that can propose function calls fits. Tests use a scripted model.
+- `ToolExecutor` trait: `DesktopExecutor` for real, a fake in tests.
+- Model steps (including thought signatures) are replayed verbatim within a request, as Google requires. Across requests only text turns are kept.
+- The frontend (`core/agentTurn.ts`) maps progress events and the outcome onto the conversation state machine. Without a Gemini key it falls back to `core/intents.ts` fixed phrases.
 
 ## Conversation states
 
