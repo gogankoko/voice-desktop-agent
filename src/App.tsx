@@ -1,6 +1,13 @@
 import { type FormEvent, useEffect, useReducer, useRef, useState } from "react";
 import { initialState, isActive, transition } from "./core/conversation/machine";
 import { type AppStatus, type Availability, getAppStatus } from "./ipc/appStatus";
+import {
+  TEXT_SCALE,
+  type TextSize,
+  getPreferences,
+  setPreferences,
+  textSizeSchema,
+} from "./ipc/preferences";
 import { PHASE_TEXT } from "./ui/phaseText";
 import "./App.css";
 
@@ -28,18 +35,32 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [view, setView] = useState<View>("main");
-  const [textScale, setTextScale] = useState(1);
+  const [textSize, setTextSize] = useState<TextSize>("normal");
+  const [prefsError, setPrefsError] = useState<string | null>(null);
   const nextId = useRef(1);
 
   useEffect(() => {
     getAppStatus()
       .then(setStatus)
       .catch(() => setStatusError("The app couldn't check which features are available."));
+    getPreferences()
+      .then((p) => setTextSize(p.textSize))
+      .catch((e) => setPrefsError(errorText(e, "Your settings couldn't be loaded.")));
   }, []);
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--text-scale", String(textScale));
-  }, [textScale]);
+    document.documentElement.style.setProperty("--text-scale", String(TEXT_SCALE[textSize]));
+  }, [textSize]);
+
+  function changeTextSize(next: TextSize) {
+    const previous = textSize;
+    setTextSize(next);
+    setPrefsError(null);
+    setPreferences({ textSize: next }).catch((e) => {
+      setTextSize(previous);
+      setPrefsError(errorText(e, "Your settings couldn't be saved."));
+    });
+  }
 
   // Without a reasoning model, every request gets an honest "not yet" reply.
   useEffect(() => {
@@ -185,13 +206,17 @@ export default function App() {
           <label htmlFor="text-size">Text size</label>
           <select
             id="text-size"
-            value={textScale}
-            onChange={(e) => setTextScale(Number(e.target.value))}
+            value={textSize}
+            onChange={(e) => {
+              const parsed = textSizeSchema.safeParse(e.target.value);
+              if (parsed.success) changeTextSize(parsed.data);
+            }}
           >
-            <option value={1}>Normal</option>
-            <option value={1.2}>Large</option>
-            <option value={1.4}>Extra large</option>
+            <option value="normal">Normal</option>
+            <option value="large">Large</option>
+            <option value="extra_large">Extra large</option>
           </select>
+          {prefsError && <p role="alert">{prefsError}</p>}
 
           <h3>What this version can do</h3>
           {statusError && <p role="alert">{statusError}</p>}
@@ -227,6 +252,11 @@ export default function App() {
       <StopShortcut onStop={onStop} enabled={isActive(state.phase)} />
     </div>
   );
+}
+
+/** Backend command errors are plain-language strings; anything else gets the fallback. */
+function errorText(e: unknown, fallback: string): string {
+  return typeof e === "string" && e.length > 0 ? e : fallback;
 }
 
 function StopShortcut({ onStop, enabled }: { onStop: () => void; enabled: boolean }) {
