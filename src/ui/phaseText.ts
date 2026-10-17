@@ -3,7 +3,7 @@ import type { Phase } from "../core/conversation/machine";
 /** Plain-language label and a non-colour symbol for every phase. */
 export const PHASE_TEXT: Record<Phase, { label: string; symbol: string }> = {
   idle: { label: "Ready", symbol: "●" },
-  listening: { label: "Listening…", symbol: "◉" },
+  listening: { label: "Listening: the microphone is on", symbol: "◉" },
   transcribing: { label: "Writing down what you said…", symbol: "✎" },
   understanding: { label: "Thinking about your request…", symbol: "…" },
   planning: { label: "Working out the steps…", symbol: "☰" },

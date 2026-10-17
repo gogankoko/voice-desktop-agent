@@ -139,6 +139,11 @@ describe("conversation machine", () => {
     expect(s.error).toBe("Notepad did not open.");
   });
 
+  it("lets a listening failure (e.g. no microphone) go to recovery", () => {
+    const s = run([{ type: "MIC_START" }, { type: "FAILED", error: "No microphone." }]);
+    expect(s.phase).toBe("recovering");
+  });
+
   it("isActive is false only when idle or cancelled", () => {
     expect(PHASES.filter((p) => !isActive(p))).toEqual(["idle", "cancelled"]);
   });
