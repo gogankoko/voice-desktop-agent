@@ -4,19 +4,20 @@ import { TEXT_SCALE, preferencesSchema, textSizeSchema } from "./preferences";
 describe("preferencesSchema", () => {
   it("accepts every text size the backend knows", () => {
     for (const textSize of textSizeSchema.options) {
-      expect(preferencesSchema.parse({ textSize, speakReplies: true })).toEqual({ textSize, speakReplies: true });
+      expect(preferencesSchema.parse({ textSize, speakReplies: true, practiceMode: false })).toEqual({ textSize, speakReplies: true, practiceMode: false });
     }
   });
 
   it("rejects unknown sizes, raw numbers and extra fields", () => {
-    expect(() => preferencesSchema.parse({ textSize: "huge", speakReplies: true })).toThrow();
-    expect(() => preferencesSchema.parse({ textSize: 1.4, speakReplies: true })).toThrow();
-    expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: true, extra: true })).toThrow();
+    expect(() => preferencesSchema.parse({ textSize: "huge", speakReplies: true, practiceMode: false })).toThrow();
+    expect(() => preferencesSchema.parse({ textSize: 1.4, speakReplies: true, practiceMode: false })).toThrow();
+    expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: true, practiceMode: false, extra: true })).toThrow();
   });
 
   it("requires speakReplies to be a boolean", () => {
     expect(() => preferencesSchema.parse({ textSize: "large" })).toThrow();
-    expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: "yes" })).toThrow();
+    expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: "yes", practiceMode: false })).toThrow();
+    expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: true })).toThrow();
   });
 
   it("has a scale for every size, growing monotonically", () => {

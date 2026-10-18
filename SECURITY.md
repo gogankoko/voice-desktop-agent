@@ -10,7 +10,7 @@
 ## Tauri boundary (in force now)
 
 - No `opener`, `shell`, `fs`, `http` or `process` plugins.
-- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only), `get_preferences`, `set_preferences` (enum-typed, `deny_unknown_fields`), `get_speech_setup`, `save_azure_speech` (validated region and key, tested against Azure before storing, key never returned), `clear_azure_speech`, `get_speech_token` (10-minute Azure STS token, cached 9 minutes), `get_assistant_setup`, `save_gemini_key` (format-checked, tested with a free Google call, never returned), `clear_gemini_key`, `run_agent` (text ≤ 2000 chars, one task at a time), `cancel_agent`, `open_application` (enum allowlist: `default_browser` only; Rust resolves and validates the executable from the Windows https association and launches it without a shell or arguments; refuses non-low-risk apps until confirmations exist; one launch at a time).
+- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only), `get_preferences`, `set_preferences` (enum-typed, `deny_unknown_fields`), `get_speech_setup`, `save_azure_speech` (validated region and key, tested against Azure before storing, key never returned), `clear_azure_speech`, `get_speech_token` (10-minute Azure STS token, cached 9 minutes), `get_assistant_setup`, `save_gemini_key` (format-checked, tested with a free Google call, never returned), `clear_gemini_key`, `run_agent` (text ≤ 2000 chars, one task at a time), `cancel_agent` (also forgets any open confirmation), `confirm_agent` (single-use confirmation id, see below), `open_application` (enum allowlist: `default_browser` only; Rust resolves and validates the executable from the Windows https association and launches it without a shell or arguments; refuses non-low-risk apps until confirmations exist; one launch at a time).
 - CSP: `default-src 'self'`, no remote scripts, frames or form posts. Beyond IPC, `connect-src` allows only `wss://*.stt.speech.microsoft.com`. The Speech SDK's audio worklet is served from the app (`public/speech-processor.js`) instead of a `blob:` URL. Prototype freezing is on.
 - All IPC responses are validated with zod in `src/ipc/*`. Inputs to future commands are validated in Rust.
 
@@ -23,13 +23,22 @@
 - What the user is told happened comes from Rust's action reports (shown in the transcript), not from the model's text.
 - Free-tier Gemini requests may be used by Google to improve its products; docs/gemini-setup.md tells the owner to enable billing before real users.
 
+## Confirmation gate (in force since Phase 6)
+
+- A validated high-risk call never runs directly. The request pauses in Rust with the exact validated call and a single-use confirmation id.
+- The confirmation screen's text is built by Rust from the validated arguments, so the user approves exactly what will run, not the model's description of it.
+- Only `confirm_agent` with the matching id approves, once, within 2 minutes. Stop, a "no", an expired question, a reused id or a forged id run nothing. While a question is open, new requests are refused.
+- Any other calls the model proposed in the same turn are not run; the model is told to propose them again afterwards.
+- Spoken answers are interpreted strictly (`src/core/consent.ts`): only exact, clear yes phrases approve. Negation, hesitation, extra words, silence and unclear speech never do. The UI's unanswered-question timer treats expiry as "no".
+- Practice mode adds `practice_send_message` (High risk, sends nothing) so the gate can be exercised for real; results and the UI are labelled as practice.
+
 ## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |
 |---|---|---|
 | Low | open an ordinary app, navigate, scroll, read the screen | May run on its own; announced. |
 | Medium | edit a document, fill a form without submitting, download, change a preference | Runs with a clear spoken summary; undo offered where possible. |
-| High | purchase, send a message or email, submit a consequential form, delete data, share private info, move money, change security settings, install software | **Explicit confirmation immediately before each action**, showing exact details. A fresh confirmation id each time. Never blanket or prior consent. |
+| High | purchase, send a message or email, submit a consequential form, delete data, share private info, move money, change security settings, install software | **Explicit confirmation immediately before each action**, showing exact details. A fresh confirmation id each time. Never blanket or prior consent. Enforced by the confirmation gate above. |
 
 Silence, background speech, ambiguous replies and partial utterances are never consent (enforced by the state machine; see tests).
 

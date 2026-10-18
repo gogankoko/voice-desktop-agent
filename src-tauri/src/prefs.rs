@@ -41,6 +41,8 @@ pub struct Preferences {
     pub text_size: TextSize,
     /// Read the assistant's replies aloud.
     pub speak_replies: bool,
+    /// Offer pretend high-risk actions for practising confirmations. Nothing real happens.
+    pub practice_mode: bool,
 }
 
 impl Default for Preferences {
@@ -48,6 +50,7 @@ impl Default for Preferences {
         Self {
             text_size: TextSize::Normal,
             speak_replies: true,
+            practice_mode: false,
         }
     }
 }
@@ -98,6 +101,11 @@ impl PrefsStore {
                 Some("0") => false,
                 _ => defaults.speak_replies,
             },
+            practice_mode: match get("practice_mode")?.as_deref() {
+                Some("1") => true,
+                Some("0") => false,
+                _ => defaults.practice_mode,
+            },
         })
     }
 
@@ -107,6 +115,7 @@ impl PrefsStore {
         for (key, value) in [
             ("text_size", prefs.text_size.as_str()),
             ("speak_replies", if prefs.speak_replies { "1" } else { "0" }),
+            ("practice_mode", if prefs.practice_mode { "1" } else { "0" }),
         ] {
             tx.execute(
                 "INSERT INTO preferences (key, value) VALUES (?1, ?2)
@@ -126,6 +135,7 @@ mod tests {
         Preferences {
             text_size,
             speak_replies,
+            practice_mode: !speak_replies,
         }
     }
 
@@ -136,6 +146,10 @@ mod tests {
         assert!(
             Preferences::default().speak_replies,
             "replies are spoken by default"
+        );
+        assert!(
+            !Preferences::default().practice_mode,
+            "practice mode is off by default"
         );
     }
 
@@ -181,11 +195,11 @@ mod tests {
     #[test]
     fn rejects_invalid_input_from_frontend() {
         for bad in [
-            r#"{"textSize":"large"}"#,
-            r#"{"textSize":"large","speakReplies":"yes"}"#,
-            r#"{"textSize":"huge","speakReplies":true}"#,
-            r#"{"textSize":1.4,"speakReplies":true}"#,
-            r#"{"textSize":"large","speakReplies":true,"extra":true}"#,
+            r#"{"textSize":"large","speakReplies":true}"#,
+            r#"{"textSize":"large","speakReplies":"yes","practiceMode":false}"#,
+            r#"{"textSize":"huge","speakReplies":true,"practiceMode":false}"#,
+            r#"{"textSize":1.4,"speakReplies":true,"practiceMode":false}"#,
+            r#"{"textSize":"large","speakReplies":true,"practiceMode":false,"extra":true}"#,
         ] {
             assert!(serde_json::from_str::<Preferences>(bad).is_err(), "{bad}");
         }

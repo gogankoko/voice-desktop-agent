@@ -19,6 +19,7 @@
     "allow-save-gemini-key",
     "allow-clear-gemini-key",
     "allow-run-agent",
-    "allow-cancel-agent"
+    "allow-cancel-agent",
+    "allow-confirm-agent"
   ]
 }

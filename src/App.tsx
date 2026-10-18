@@ -1,10 +1,18 @@
 import { type FormEvent, useEffect, useReducer, useRef, useState } from "react";
 import { type Phase, initialState, isActive, transition } from "./core/conversation/machine";
-import { runAgentRequest } from "./core/agentTurn";
+import { type AgentTurnDeps, answerConfirmation, confirmationQuestion, runAgentRequest } from "./core/agentTurn";
+import { interpretAnswer } from "./core/consent";
 import { matchIntent } from "./core/intents";
 import { listenTurn } from "./core/listenTurn";
 import { runRequest } from "./core/runTask";
-import { type ActionReport, cancelAgent, onAgentExecuting, runAgent } from "./ipc/agent";
+import {
+  type ActionReport,
+  type ConfirmationRequest,
+  cancelAgent,
+  confirmAgent,
+  onAgentExecuting,
+  runAgent,
+} from "./ipc/agent";
 import { type AppStatus, type Availability, getAppStatus } from "./ipc/appStatus";
 import {
   type Preferences,
@@ -16,6 +24,7 @@ import {
 } from "./ipc/preferences";
 import { openApplication } from "./ipc/tools";
 import { AssistantSettings } from "./ui/AssistantSettings";
+import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { SpeechSettings } from "./ui/SpeechSettings";
 import { errorText } from "./ui/errorText";
 import { PHASE_TEXT } from "./ui/phaseText";
@@ -60,7 +69,14 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [interim, setInterim] = useState("");
   const [view, setView] = useState<View>("main");
-  const [prefs, setPrefs] = useState<Preferences>({ textSize: "normal", speakReplies: true });
+  const [prefs, setPrefs] = useState<Preferences>({
+    textSize: "normal",
+    speakReplies: true,
+    practiceMode: false,
+  });
+  const [question, setQuestion] = useState<ConfirmationRequest | null>(null);
+  const [answerHint, setAnswerHint] = useState<string | null>(null);
+  const [answerListening, setAnswerListening] = useState(false);
   const [prefsError, setPrefsError] = useState<string | null>(null);
   const [synth] = useState(() => new WindowsSynthesizer());
   const [voiceInstalled, setVoiceInstalled] = useState(synth.available);
@@ -122,20 +138,78 @@ export default function App() {
     const id = ++taskId.current;
     const isCurrent = () => taskId.current === id;
     if (assistantReady.current) {
-      const text = state.utterance;
-      void runAgentRequest(text, {
-        runAgent: (t) => runAgent(id, t),
-        onExecuting: (cb) => onAgentExecuting(id, cb),
-        dispatch,
-        say,
-        note: noteAction,
-        isCurrent,
-      });
+      void runAgentRequest(state.utterance, agentDeps(id));
     } else {
       // No assistant key: fixed phrases only, handled locally.
       void runRequest(matchIntent(state.utterance), { dispatch, say, openApplication, isCurrent });
     }
   }, [state.phase, state.utterance]);
+
+  function agentDeps(id: number): AgentTurnDeps {
+    return {
+      runAgent: (t) => runAgent(id, t),
+      confirmAgent: (cid, approved) => confirmAgent(id, cid, approved),
+      onExecuting: (cb) => onAgentExecuting(id, cb),
+      dispatch,
+      say,
+      note: noteAction,
+      askConfirmation: (c) => {
+        setAnswerHint(null);
+        setQuestion(c);
+        say(confirmationQuestion(c));
+      },
+      isCurrent: () => taskId.current === id,
+    };
+  }
+
+  /** The only path from the confirmation screen to the backend: an explicit yes or no. */
+  function answer(approved: boolean, how: string) {
+    const q = question;
+    if (!q) return;
+    setQuestion(null);
+    setAnswerHint(null);
+    synth.cancel();
+    recognizer.current?.cancel();
+    addMessage("you", how);
+    void answerConfirmation(q, approved, agentDeps(taskId.current));
+  }
+
+  async function answerBySpeaking() {
+    const q = question;
+    if (!q) return;
+    synth.cancel();
+    setAnswerHint(null);
+    if (!recognizer.current) {
+      const { AzureRecognizer } = await import("./voice/azureRecognizer");
+      recognizer.current = new AzureRecognizer();
+    }
+    setAnswerListening(true);
+    let heard = "";
+    try {
+      heard = await recognizer.current.listenOnce(() => {});
+    } catch (e) {
+      setAnswerHint(errorText(e, "I couldn't listen just now. Please press a button."));
+      return;
+    } finally {
+      setAnswerListening(false);
+    }
+    const verdict = interpretAnswer(heard);
+    if (verdict === "yes") answer(true, `Yes (said: "${heard}")`);
+    else if (verdict === "no") answer(false, `No (said: "${heard}")`);
+    else
+      setAnswerHint(
+        heard
+          ? `I heard "${heard}". To be safe, please say just "yes" or "no", or press a button.`
+          : "I didn't hear anything. Please say yes or no, or press a button.",
+      );
+  }
+
+  // An unanswered question is never consent: when it expires, it's a no.
+  useEffect(() => {
+    if (!question) return;
+    const t = setTimeout(() => answer(false, "No answer in time"), question.expiresInSecs * 1000 - 2000);
+    return () => clearTimeout(t);
+  }, [question]);
 
   // "Speaking" ends when the voice has finished (immediately if replies aren't read aloud).
   useEffect(() => {
@@ -183,6 +257,7 @@ export default function App() {
 
   function onStop() {
     taskId.current++;
+    setQuestion(null);
     void cancelAgent().catch(() => {});
     recognizer.current?.cancel();
     synth.cancel();
@@ -221,6 +296,12 @@ export default function App() {
         <strong>Early test version.</strong> You can talk to me in your own words, but so far the
         only thing I can do on your computer is open your web browser.
       </div>
+      {prefs.practiceMode && (
+        <div className="practice-banner" role="note">
+          <span aria-hidden="true">🎓 </span>Practice mode is on: you can try important actions like
+          sending a message. Nothing is really sent.
+        </div>
+      )}
 
       {view === "main" && (
         <main className="main">
@@ -350,6 +431,14 @@ export default function App() {
             />
             Read my replies aloud
           </label>
+          <label className="choice toggle">
+            <input
+              type="checkbox"
+              checked={prefs.practiceMode}
+              onChange={(e) => changePrefs({ ...prefs, practiceMode: e.target.checked })}
+            />
+            Practice mode (try sending a pretend message; nothing is really sent)
+          </label>
           {prefsError && <p role="alert">{prefsError}</p>}
 
           <SpeechSettings onChanged={refreshStatus} />
@@ -372,6 +461,16 @@ export default function App() {
             </dl>
           )}
         </main>
+      )}
+
+      {question && (
+        <ConfirmDialog
+          request={question}
+          onAnswer={(approved) => answer(approved, approved ? "Yes (pressed Yes)" : "No (pressed No)")}
+          onAnswerBySpeaking={status?.speechRecognition === "available" ? () => void answerBySpeaking() : undefined}
+          listening={answerListening}
+          hint={answerHint}
+        />
       )}
 
       <footer className="stopbar">

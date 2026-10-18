@@ -136,27 +136,65 @@ struct AgentProgress {
 pub async fn run_agent(
     app: AppHandle,
     state: State<'_, AgentState>,
+    prefs: State<'_, PrefsStore>,
     task_id: u32,
     text: String,
 ) -> Result<AgentOutcome, String> {
-    let key = secrets::load_gemini_key()
-        .map_err(|_| "I couldn't read the assistant settings.".to_string())?
-        .ok_or_else(|| {
-            "The assistant isn't set up yet. Add a Gemini key in Settings.".to_string()
-        })?;
-    let model = gemini::Gemini::new(state.http.clone(), key);
+    let practice = prefs.load().map(|p| p.practice_mode).unwrap_or(false);
+    let model = gemini::Gemini::new(state.http.clone(), gemini_key()?, practice);
     state
-        .run(&model, &DesktopExecutor, &text, |tool| {
-            let _ = app.emit(
-                "agent-progress",
-                AgentProgress {
-                    task_id,
-                    stage: "executing",
-                    tool,
-                },
-            );
-        })
+        .run(
+            &model,
+            &DesktopExecutor,
+            &text,
+            practice,
+            progress(&app, task_id),
+        )
         .await
+}
+
+/// The user's explicit answer to a confirmation question. Only the matching, unexpired
+/// `confirmation_id` is accepted, once; approval runs exactly the action that was shown.
+#[tauri::command]
+pub async fn confirm_agent(
+    app: AppHandle,
+    state: State<'_, AgentState>,
+    task_id: u32,
+    confirmation_id: String,
+    approved: bool,
+) -> Result<AgentOutcome, String> {
+    let (model_id, practice) = state
+        .paused_info(&confirmation_id)
+        .ok_or_else(|| "That question was already answered or has been cancelled.".to_string())?;
+    let model = gemini::Gemini::resume(state.http.clone(), gemini_key()?, practice, model_id);
+    state
+        .confirm(
+            &model,
+            &DesktopExecutor,
+            &confirmation_id,
+            approved,
+            progress(&app, task_id),
+        )
+        .await
+}
+
+fn gemini_key() -> Result<String, String> {
+    secrets::load_gemini_key()
+        .map_err(|_| "I couldn't read the assistant settings.".to_string())?
+        .ok_or_else(|| "The assistant isn't set up yet. Add a Gemini key in Settings.".to_string())
+}
+
+fn progress(app: &AppHandle, task_id: u32) -> impl FnMut(&'static str) + '_ {
+    move |tool| {
+        let _ = app.emit(
+            "agent-progress",
+            AgentProgress {
+                task_id,
+                stage: "executing",
+                tool,
+            },
+        );
+    }
 }
 
 /// Stops the current request: no further model calls or tool actions start.

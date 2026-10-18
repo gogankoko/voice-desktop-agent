@@ -38,7 +38,7 @@
 - [ ] Foreground-window check enforced in Rust before any input simulation (lands with `type_text`)
 - [ ] `get_active_window` exposed as an agent tool (internal only for now; the orchestrator arrives in Phase 5)
 
-## Phase 5: Voice-to-computer with a reasoning model (code complete; live test pending a Gemini key)
+## Phase 5: Voice-to-computer with a reasoning model ✅
 - [x] Provider: **Google Gemini** (owner's choice, 2026-10-18), Interactions API, `gemini-3.8-flash`, `store: false`
 - [x] Deterministic tool registry: known tools only, exact typed arguments, low risk only (`agent/registry.rs`)
 - [x] Bounded orchestrator: 4 model calls, 60 s, per-request dedupe, one task at a time, Stop interrupts pending model calls
@@ -46,10 +46,23 @@
 - [x] Untrusted model output: refused calls are reported back to the model as errors and never executed (tests include injected calls)
 - [x] Short in-memory conversation history (6 turns, never saved)
 - [x] Settings: Gemini key with free-tier privacy notice; falls back to fixed phrases without a key
-- [ ] **Live test with the owner's Gemini key**
+- [x] Live tests with the owner's Gemini key (2026-10-18): full tool round trip; found and fixed 503 overload (retry + fallback model) and an over-strict key format check
 - [ ] Progress for multi-step plans beyond a single tool (arrives with more tools)
 
-## Phases 6–8
+## Phase 6: Interruption and safety (code complete)
+- [x] Confirmation gate in Rust: high-risk calls pause the request; single-use id, 2-minute expiry, exact stored call runs on approval; Stop, decline, expiry, forged or reused ids run nothing
+- [x] Confirmation text built from validated arguments, not model prose; other calls proposed alongside wait
+- [x] Paused requests resume on the same Gemini model (thought signatures)
+- [x] Confirmation screen: modal, big Yes/No, focus starts on No, Esc = No, details read aloud, optional spoken answer
+- [x] Strict spoken consent: only exact clear "yes" phrases approve (`core/consent.ts`, tests)
+- [x] Practice mode (setting + banner): pretend "send a message" exercises the real gate; nothing is sent; labelled everywhere
+- [x] Model told plainly when the user already confirmed/declined (live test caught a misleading reply)
+- [x] Model instructions consistent with the tool list (desktop test caught a refusal); primary and fallback models verified live
+- [x] Desktop test `scripts/smoke-confirm.ps1`: decline round passed repeatedly; approve round passed once; later runs skipped safely while the owner was using the PC
+- [ ] Pause/resume of a running multi-step task (meaningful once multi-step tools exist)
+- [ ] Undo for reversible actions (needs the first undoable tool)
+
+## Phases 7–8
 See the master prompt §14. Not started.
 
 ## Known limitations
