@@ -18,7 +18,7 @@ Check (Find-ByName $win "Opening your browser and websites, reading pages, follo
 Check (Find-ByName $win "Available (Windows voices)") "a Windows voice is installed for spoken replies" "no Windows voice found"
 Check (Find-ByName $win "Listening (Microsoft Azure Speech)") "listening setup section shown" "listening setup section missing"
 Check (Find-ByName $win "Understanding requests (Google Gemini)") "assistant setup section shown" "assistant setup section missing"
-Check (Find-ByName $win "0.1.0") "sees version" "version missing"
+Check (Find-ByName $win "0.2.0") "sees version" "version missing"
 Click $win "Home"
 
 if (Send-RequestSafely $win "hello there") {

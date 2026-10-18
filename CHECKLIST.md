@@ -62,7 +62,7 @@
 - [ ] Pause/resume of a running multi-step task (meaningful once multi-step tools exist)
 - [ ] Undo for reversible actions (needs the first undoable tool)
 
-## Phase 7: Browser interaction (code complete)
+## Phase 7: Browser interaction ✅
 - [x] `open_website`: https-only public sites (`tools/web_url.rs`), launched as a single argument, verified from the address bar
 - [x] `read_webpage` (UIA Text pattern), `scroll_webpage` (Scroll pattern), `list_links` + `follow_link` (Invoke) via Windows UI Automation, no extensions or keystrokes
 - [x] Fresh observation: link numbers only from this request's latest list; page and link text re-checked before clicking; stale links refused
@@ -74,8 +74,17 @@
 - [ ] Buttons, forms and typing into web pages (need `type_text` with the foreground check; next)
 - [ ] Reading a page aloud in full ("read me this article") with pause/continue
 
-## Phase 8
-Hardening. Not started.
+## Phase 8: Hardening (in progress)
+- [x] Local diagnostics log, redacted before writing (keys, tokens, web addresses, emails, Windows user names); never conversation or page text; Help → show / copy / clear
+- [x] Panic hook, React error boundary with a restart screen, uncaught UI errors logged
+- [x] Per-request technical summary (tools, verified or not, model, timing) for troubleshooting
+- [x] Windows high-contrast (forced-colors) support
+- [x] Whole-app accessibility tests (axe) on Home, Settings, Help and the confirmation screen; Enter on the confirmation screen's initial focus means No
+- [x] App icon, version 0.2.0, installer metadata, per-user install
+- [x] PRIVACY.md data inventory, CHANGELOG.md
+- [ ] Code signing (needs a certificate; costs money, so it's the owner's decision)
+- [ ] Continuous integration (GitHub Actions; uses Actions minutes, so it's the owner's decision)
+- [ ] Manual screen-reader pass with NVDA / Narrator
 
 ## Known limitations
 - Listening needs an Azure Speech key (docs/azure-speech-setup.md); understanding free-form requests needs a Gemini key (docs/gemini-setup.md).
@@ -83,4 +92,4 @@ Hardening. Not started.
 - Browser control relies on the browser's accessibility tree; the address bar is found by an English "Address" label, so non-English Windows/browsers may not verify navigation (it then says it couldn't confirm). The only computer action is opening the default browser, triggered by a few fixed typed phrases.
 - If the browser was already in front, verification can't tell a new window from the existing one.
 - The smoke test's typing step needs the app in the foreground (Windows foreground lock). Launching the app just before the test usually satisfies this.
-- The installer is unsigned, so Windows SmartScreen will warn when it runs. Code signing comes in Phase 8.
+- The installer is unsigned, so Windows SmartScreen warns when it runs (signing needs a paid certificate).

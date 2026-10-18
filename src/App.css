@@ -466,3 +466,49 @@ summary {
   border-radius: 10px;
   font-weight: 600;
 }
+
+.diag-text {
+  width: 100%;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 0.8em;
+  margin: 0.75rem 0;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Windows high-contrast themes: let the system colours through and keep every boundary visible. */
+@media (forced-colors: active) {
+  button,
+  input,
+  select,
+  textarea,
+  .choice,
+  .transcript,
+  .notice,
+  .practice-banner,
+  .status-symbol,
+  .confirm,
+  .speech-settings,
+  .choices {
+    border: 2px solid CanvasText;
+  }
+
+  button[aria-current="page"],
+  .choice:has(input:checked),
+  .mic-listening {
+    outline: 4px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  :focus-visible {
+    outline: 4px solid Highlight;
+  }
+
+  button:disabled {
+    color: GrayText;
+    border-color: GrayText;
+  }
+}

@@ -43,6 +43,18 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke-prefs.ps1   # setting sur
 
 The smoke test drives the real window through Windows UI Automation. It only types if the app is the foreground window, and otherwise skips that step and says so.
 
+## Troubleshooting
+
+Help → **Something not working?** → **Show technical details** shows the app's recent technical log (redacted; never your conversation). Copy it into a message to whoever is helping you.
+
+## Release procedure
+
+1. Update the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`, and add a CHANGELOG entry.
+2. `npm test`, `npm run test:rust`, `npm run build`.
+3. `npm run tauri build` → `src-tauri/target/release/bundle/nsis/Voice Desktop Agent_<version>_x64-setup.exe`.
+4. Run the desktop smoke tests against the release build (see Test).
+5. The app icon is generated from `app-icon.svg` with `npx tauri icon app-icon.svg` (then delete the `android/` and `ios/` folders it creates).
+
 ## Build an installer
 
 ```powershell
@@ -68,3 +80,5 @@ Understanding requests in your own words uses Google Gemini. See [docs/gemini-se
 - [ARCHITECTURE.md](ARCHITECTURE.md): modules, decisions, lessons from native testing
 - [SECURITY.md](SECURITY.md): permissions model, risk levels, data handling
 - [CHECKLIST.md](CHECKLIST.md): development progress and known limitations
+- [PRIVACY.md](PRIVACY.md): exactly what data stays local and what goes to Microsoft or Google
+- [CHANGELOG.md](CHANGELOG.md): what changed in each version

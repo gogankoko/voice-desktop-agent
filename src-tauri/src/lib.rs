@@ -1,5 +1,6 @@
 mod agent;
 mod commands;
+mod diag;
 mod prefs;
 mod secrets;
 mod speech;
@@ -14,6 +15,17 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
+            if diag::init(&dir.join("logs")).is_ok() {
+                std::panic::set_hook(Box::new(|info| diag::log("panic", info.to_string())));
+            }
+            diag::log(
+                "app",
+                format!(
+                    "started version {} on {}",
+                    env!("CARGO_PKG_VERSION"),
+                    std::env::consts::OS
+                ),
+            );
             app.manage(prefs::PrefsStore::open(&dir.join("voice-agent.db"))?);
             app.manage(speech::SpeechState::new());
             app.manage(agent::AgentState::new());
@@ -34,6 +46,9 @@ pub fn run() {
             commands::run_agent,
             commands::cancel_agent,
             commands::confirm_agent,
+            commands::get_diagnostics,
+            commands::clear_diagnostics,
+            commands::log_frontend_error,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

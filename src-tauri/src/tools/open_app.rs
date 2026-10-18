@@ -78,7 +78,7 @@ pub fn open(app: AllowedApp) -> Result<OpenResult, String> {
     .ok_or_else(|| "I couldn't find your web browser.".to_string())?;
 
     Command::new(&exe).spawn().map_err(|e| {
-        eprintln!("open_application: launch failed: {e}");
+        crate::diag::log("open_app", format!("open_application: launch failed: {e}"));
         "I tried to open your browser, but Windows didn't start it.".to_string()
     })?;
 

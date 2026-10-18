@@ -69,7 +69,7 @@ fn automation() -> Result<IUIAutomation, String> {
         CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
     }
     .map_err(|e| {
-        eprintln!("UI Automation unavailable: {e}");
+        crate::diag::log("browser", format!("UI Automation unavailable: {e}"));
         "Windows' accessibility interface isn't available, so I can't work with the browser."
             .to_string()
     })
@@ -206,7 +206,7 @@ fn address_matches(address: &str, site: &str) -> bool {
 pub fn open_website(exe: &Path, url: &SafeUrl) -> Result<NavigationResult, String> {
     // `url.url` always starts with "https://", so it can't be read as a command-line flag.
     Command::new(exe).arg(&url.url).spawn().map_err(|e| {
-        eprintln!("open_website: launch failed: {e}");
+        crate::diag::log("browser", format!("open_website: launch failed: {e}"));
         "I couldn't ask your browser to open that website.".to_string()
     })?;
     let deadline = Instant::now() + NAVIGATION_TIMEOUT;
