@@ -58,7 +58,7 @@ const AVAILABILITY_TEXT: Record<Availability, string> = {
   not_implemented: "Not available yet",
   needs_setup: "Needs setting up (see below)",
   mock: "Practice mode (pretend only)",
-  limited: "Using your web browser: websites, reading, links, searching, buttons",
+  limited: "Your web browser, making the screen bigger, and finding your files (if allowed)",
   available: "Available",
 };
 
@@ -80,6 +80,7 @@ export default function App() {
     textSize: "normal",
     speakReplies: true,
     practiceMode: false,
+    fileSearch: false,
   });
   const [question, setQuestion] = useState<ConfirmationRequest | null>(null);
   const [answerHint, setAnswerHint] = useState<string | null>(null);
@@ -320,7 +321,8 @@ export default function App() {
       </header>
 
       <div className="notice" role="note">
-        <strong>Early test version.</strong> You can talk to me in your own words. So far I can work in your web browser: open websites, read pages to you, follow links, search, fill in ordinary boxes and press buttons.
+        <strong>Early test version.</strong> You can talk to me in your own words. I can work in your
+        web browser, make your screen bigger, and find your files if you allow it in Settings.
       </div>
       {prefs.practiceMode && (
         <div className="practice-banner" role="note">
@@ -480,6 +482,24 @@ export default function App() {
             />
             Practice mode (try sending a pretend message; nothing is really sent)
           </label>
+
+          <section className="speech-settings" aria-labelledby="files-heading">
+            <h3 id="files-heading">Finding your files</h3>
+            <p className="hint-left">
+              When this is on, I can look for files by their <strong>name</strong> in your Downloads,
+              Pictures, Documents and Desktop folders, and open photos, documents, videos and music
+              or show a file in its folder. I never read what's inside files, and I never change,
+              move or delete anything. File names I find are sent to Google so I can understand them.
+            </p>
+            <label className="choice toggle">
+              <input
+                type="checkbox"
+                checked={prefs.fileSearch}
+                onChange={(e) => changePrefs({ ...prefs, fileSearch: e.target.checked })}
+              />
+              Let the assistant search my files
+            </label>
+          </section>
           {prefsError && <p role="alert">{prefsError}</p>}
 
           <SpeechSettings onChanged={refreshStatus} />

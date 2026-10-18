@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 
 use crate::tools::Risk;
 use crate::tools::browser::ZoomDirection;
+use crate::tools::files::{FileKind, When};
 use crate::tools::open_app::AllowedApp;
 use crate::tools::screen::{MagnifierAction, SettingsPage};
 use crate::tools::web_url::{SafeUrl, validate_url};
@@ -101,6 +102,20 @@ pub enum ValidatedCall {
     Magnifier(MagnifierAction),
     ZoomWebpage(ZoomDirection),
     OpenSettingsPage(SettingsPage),
+    FindFiles {
+        kind: FileKind,
+        when: When,
+        name_contains: Option<String>,
+    },
+    /// `name` is filled in by the orchestrator from the latest find_files result.
+    ShowFile {
+        number: u32,
+        name: String,
+    },
+    OpenFile {
+        number: u32,
+        name: String,
+    },
     /// `label` is filled in by the orchestrator from the latest control list.
     PressButton {
         number: u32,
@@ -135,7 +150,12 @@ impl ValidatedCall {
             // Temporary, reversible view changes; Settings pages only open (the person decides).
             | ValidatedCall::Magnifier(_)
             | ValidatedCall::ZoomWebpage(_)
-            | ValidatedCall::OpenSettingsPage(_) => Risk::Low,
+            | ValidatedCall::OpenSettingsPage(_)
+            // Names only / showing a file in its folder: nothing runs or changes.
+            | ValidatedCall::FindFiles { .. }
+            | ValidatedCall::ShowFile { .. } => Risk::Low,
+            // Opens an everyday file in its usual app (types are restricted).
+            ValidatedCall::OpenFile { .. } => Risk::Medium,
             ValidatedCall::PressButton { label, .. } => link_risk(label),
             // Filling in a box without submitting: reversible, announced in the transcript.
             ValidatedCall::TypeText { .. } => Risk::Medium,
@@ -159,6 +179,9 @@ impl ValidatedCall {
             ValidatedCall::Magnifier(_) => "screen_magnifier",
             ValidatedCall::ZoomWebpage(_) => "zoom_webpage",
             ValidatedCall::OpenSettingsPage(_) => "open_windows_settings",
+            ValidatedCall::FindFiles { .. } => "find_files",
+            ValidatedCall::ShowFile { .. } => "show_file",
+            ValidatedCall::OpenFile { .. } => "open_file",
             ValidatedCall::PressButton { .. } => "press_button",
             ValidatedCall::TypeText { .. } => "type_text",
             ValidatedCall::PracticeSendMessage { .. } => "practice_send_message",
@@ -199,6 +222,11 @@ impl ValidatedCall {
             ValidatedCall::OpenSettingsPage(p) => {
                 format!("Opening the {} settings", p.plain_name())
             }
+            ValidatedCall::FindFiles { .. } => "Looking through your files".into(),
+            ValidatedCall::ShowFile { name, .. } => {
+                format!("Showing \u{201c}{name}\u{201d} in its folder")
+            }
+            ValidatedCall::OpenFile { name, .. } => format!("Opening \u{201c}{name}\u{201d}"),
             ValidatedCall::PressButton { label, .. } => format!("Pressing \u{201c}{label}\u{201d}"),
             ValidatedCall::TypeText { label, text, .. } => {
                 format!("Typing \u{201c}{text}\u{201d} into \u{201c}{label}\u{201d}")
@@ -222,6 +250,7 @@ impl ValidatedCall {
                 // "Bigger... bigger still" is a normal request.
                 | ValidatedCall::Magnifier(_)
                 | ValidatedCall::ZoomWebpage(_)
+                | ValidatedCall::FindFiles { .. }
         )
     }
 }
@@ -294,6 +323,9 @@ pub fn confirmation_text(call: &ValidatedCall) -> ConfirmationText {
         | ValidatedCall::Magnifier(_)
         | ValidatedCall::ZoomWebpage(_)
         | ValidatedCall::OpenSettingsPage(_)
+        | ValidatedCall::FindFiles { .. }
+        | ValidatedCall::ShowFile { .. }
+        | ValidatedCall::OpenFile { .. }
         | ValidatedCall::ReadWebpage
         | ValidatedCall::ScrollWebpage { .. }
         | ValidatedCall::ListLinks => ConfirmationText {
@@ -351,6 +383,15 @@ struct ScrollArgs {
 #[serde(deny_unknown_fields)]
 struct FollowLinkArgs {
     number: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FindFilesArgs {
+    kind: FileKind,
+    when: When,
+    #[serde(default)]
+    name_contains: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -491,6 +532,40 @@ pub fn declarations(practice: bool) -> Vec<Value> {
                 "required": ["page"]
             }
         }),
+        json!({
+            "type": "function",
+            "name": "find_files",
+            "description": "Searches the person's Downloads, Pictures, Documents and Desktop folders by file NAME (never contents), newest first, up to 10 results. Only works if they turned on file search in Settings.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["photo", "document", "video", "music", "any"]},
+                    "when": {"type": "string", "enum": ["today", "yesterday", "this_week", "any"], "description": "When the file was saved or downloaded."},
+                    "name_contains": {"type": "string", "description": "Optional part of the file name, e.g. 'invoice'."}
+                },
+                "required": ["kind", "when"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "show_file",
+            "description": "Shows a file from the latest find_files result in File Explorer, selected in its folder. Nothing is opened or run.",
+            "parameters": {
+                "type": "object",
+                "properties": {"number": {"type": "integer"}},
+                "required": ["number"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "open_file",
+            "description": "Opens a photo, document, video or music file from the latest find_files result in its usual app. Other kinds of files (programs, scripts, shortcuts) are refused; use show_file for those.",
+            "parameters": {
+                "type": "object",
+                "properties": {"number": {"type": "integer"}},
+                "required": ["number"]
+            }
+        }),
         json!({ "type": "function", "name": "undo_last_action",
             "description": "Undoes the most recent thing you did on the computer, if it can be undone safely: going back after a link or button opened a new page, or putting back what was in a box you typed into. If it can't be undone, the result says why; tell the person kindly. Use it when they say undo, go back, or that was wrong.",
             "parameters": {"type": "object", "properties": {}}
@@ -627,6 +702,28 @@ pub fn validate(name: &str, arguments: &Value, practice: bool) -> Result<Validat
         "open_windows_settings" => serde_json::from_value::<SettingsArgs>(arguments.clone())
             .map(|a| ValidatedCall::OpenSettingsPage(a.page))
             .map_err(|_| Refusal("Invalid arguments. `page` must be text_size, display, magnifier or mouse_pointer.".into())),
+        "find_files" => {
+            let a = serde_json::from_value::<FindFilesArgs>(arguments.clone()).map_err(|_| {
+                Refusal("Invalid arguments. Give `kind` and `when` from the lists, and optionally `name_contains`.".into())
+            })?;
+            let name_contains = match a.name_contains.map(|n| n.trim().to_string()) {
+                Some(n) if n.is_empty() => None,
+                Some(n) if n.chars().count() > 60 || n.chars().any(|c| c.is_control() || "\\/:*?\"<>|".contains(c)) => {
+                    return Err(Refusal("`name_contains` must be a short piece of a file name.".into()));
+                }
+                other => other,
+            };
+            Ok(ValidatedCall::FindFiles { kind: a.kind, when: a.when, name_contains })
+        }
+        "show_file" | "open_file" => {
+            let a = serde_json::from_value::<PressButtonArgs>(arguments.clone())
+                .map_err(|_| Refusal("Invalid arguments. Give exactly `number`, from find_files.".into()))?;
+            Ok(if name == "show_file" {
+                ValidatedCall::ShowFile { number: a.number, name: String::new() }
+            } else {
+                ValidatedCall::OpenFile { number: a.number, name: String::new() }
+            })
+        }
         "undo_last_action" => {
             serde_json::from_value::<NoArgs>(arguments.clone())
                 .map_err(|_| Refusal("This tool takes no arguments.".into()))?;
@@ -760,8 +857,8 @@ mod tests {
                 message: "Hello".into()
             })
         );
-        assert_eq!(declarations(false).len(), 15);
-        assert_eq!(declarations(true).len(), 16);
+        assert_eq!(declarations(false).len(), 18);
+        assert_eq!(declarations(true).len(), 19);
     }
 
     #[test]
@@ -933,6 +1030,40 @@ mod tests {
                 number: 1,
                 label: "Search".into(),
                 text: "milk".into()
+            }
+            .risk(),
+            Risk::Medium
+        );
+    }
+
+    #[test]
+    fn file_tools_validate_strictly() {
+        assert!(matches!(
+            validate(
+                "find_files",
+                &json!({"kind": "photo", "when": "yesterday"}),
+                false
+            ),
+            Ok(ValidatedCall::FindFiles {
+                kind: FileKind::Photo,
+                when: When::Yesterday,
+                name_contains: None
+            })
+        ));
+        for bad in [
+            json!({"kind": "photo"}),
+            json!({"kind": "executable", "when": "any"}),
+            json!({"kind": "any", "when": "any", "path": "C:\\Windows"}),
+            json!({"kind": "any", "when": "any", "name_contains": "..\\..\\secrets"}),
+            json!({"kind": "any", "when": "any", "name_contains": "*.exe"}),
+        ] {
+            assert!(validate("find_files", &bad, false).is_err(), "{bad}");
+        }
+        assert!(validate("open_file", &json!({"path": "C:\\x.exe"}), false).is_err());
+        assert_eq!(
+            ValidatedCall::OpenFile {
+                number: 1,
+                name: "a.pdf".into()
             }
             .risk(),
             Risk::Medium

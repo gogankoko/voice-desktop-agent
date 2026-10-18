@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Make everything bigger:** the assistant can turn on Windows Magnifier and zoom in or out, zoom web pages, and open the right Windows Settings page for bigger text, display size or a bigger mouse pointer.
+- **Find your files (opt-in):** "find the photo I downloaded yesterday" searches file names in Downloads, Pictures, Documents and Desktop, then opens the photo or shows it in its folder. Off until you turn it on in Settings.
+
 - **Step-by-step progress:** the status line shows what's happening ("Opening youtube.com", "Typing 'Yeat' into 'Search'").
 - **Pause / Continue** a request while it's working.
 - **Undo:** "undo that" goes back a page or puts back what was in a box; it says honestly when something can't be undone.

@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use super::gemini::{ChatModel, ModelError, ModelTurn, ProposedCall};
 use super::*;
 use crate::tools::browser::ZoomDirection;
+use crate::tools::files::{FileKind, FoundFile, When};
 use crate::tools::screen::{MagnifierAction, MagnifierResult, SettingsPage};
 
 /// Replays scripted turns and records every input it was sent.
@@ -126,6 +127,29 @@ impl ToolExecutor for FakeDesktop {
             verified: true,
             address: expected_previous,
         })
+    }
+    async fn find_files(
+        &self,
+        _kind: FileKind,
+        _when: When,
+        _name: Option<String>,
+    ) -> Result<Vec<FoundFile>, String> {
+        let f = |name: &str| FoundFile {
+            path: std::path::PathBuf::from(format!("C:/Users/x/Downloads/{name}")),
+            name: name.into(),
+            folder: "Downloads".into(),
+            modified: "yesterday at 14:05".into(),
+            size: "2.0 MB".into(),
+        };
+        Ok(vec![f("holiday.jpg"), f("setup.exe")])
+    }
+    async fn show_file(&self, f: FoundFile) -> Result<(), String> {
+        self.screen.lock().unwrap().push(format!("show {}", f.name));
+        Ok(())
+    }
+    async fn open_file(&self, f: FoundFile) -> Result<(), String> {
+        self.screen.lock().unwrap().push(format!("open {}", f.name));
+        Ok(())
     }
     async fn magnifier(&self, action: MagnifierAction) -> Result<MagnifierResult, String> {
         self.screen.lock().unwrap().push(format!("{action:?}"));
@@ -1424,4 +1448,80 @@ fn settings_pages_only_open_and_undo_explains_magnifier() {
     let r = &results(&model)[0]["result"];
     assert_eq!(r["undone"], false);
     assert!(r["reason"].as_str().unwrap().contains("magnifier off"));
+}
+
+// ---- Finding files ----
+
+fn files_run(
+    enabled: bool,
+    second: Vec<(&'static str, &'static str, Value)>,
+) -> (ScriptedModel, FakeDesktop, AgentOutcome) {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[(
+            "f0",
+            "find_files",
+            json!({"kind": "any", "when": "yesterday"}),
+        )])),
+        Ok(call_turn(&second)),
+        Ok(text_turn("Done.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let mut run = TaskRun::new(&[], "find the photo I downloaded yesterday", false);
+    run.files_enabled = enabled;
+    let out = match block_on(run.drive(&model, &desk, &Cancel::default(), &mut |_| {})).unwrap() {
+        Drive::Finished(o, _) => o,
+        _ => panic!("unexpected"),
+    };
+    (model, desk, out)
+}
+
+#[test]
+fn file_search_is_off_unless_turned_on() {
+    let (model, desk, _) = files_run(false, vec![("o1", "open_file", json!({"number": 1}))]);
+    assert!(desk.screen.lock().unwrap().is_empty());
+    let first = &model.seen.lock().unwrap()[1];
+    let r = first
+        .iter()
+        .find(|s| s["type"] == "function_result")
+        .unwrap();
+    assert!(
+        r["result"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("turned off")
+    );
+}
+
+#[test]
+fn found_files_never_reveal_full_paths() {
+    let (model, _, _) = files_run(true, vec![]);
+    let first = &model.seen.lock().unwrap()[1];
+    let r = first
+        .iter()
+        .find(|s| s["type"] == "function_result")
+        .unwrap()
+        .to_string();
+    assert!(r.contains("holiday.jpg"));
+    assert!(!r.contains("C:/Users"), "paths stay in Rust");
+}
+
+#[test]
+fn photos_open_but_programs_are_only_shown() {
+    let (_, desk, out) = files_run(
+        true,
+        vec![
+            ("o1", "open_file", json!({"number": 1})),
+            ("o2", "open_file", json!({"number": 2})),
+            ("s2", "show_file", json!({"number": 2})),
+        ],
+    );
+    assert_eq!(
+        *desk.screen.lock().unwrap(),
+        vec!["open holiday.jpg", "show setup.exe"]
+    );
+    assert!(
+        out.actions
+            .iter()
+            .any(|a| a.summary.contains("Showed \u{201c}setup.exe\u{201d}"))
+    );
 }

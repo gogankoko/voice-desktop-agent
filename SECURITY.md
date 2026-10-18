@@ -57,6 +57,13 @@
 - Read-aloud text goes from Rust straight to the app's voice; the model only learns that reading started.
 - `list_open_windows` sends window titles (which can be personal) to the model only when the person asks what's on their screen.
 
+## Screen size and files (since 0.3)
+
+- Magnifier is controlled only through Windows' own global shortcuts (Win+Plus / Minus / Esc); nothing is typed into any app. Settings pages are a fixed list of `ms-settings:` addresses; the person makes lasting changes themselves.
+- File search is **off by default** and must be switched on in Settings. Only file *names* in Downloads, Pictures, Documents and Desktop are searched (depth ≤ 4, at most 20,000 entries, 10 results); contents are never read; nothing is changed, moved or deleted.
+- The model sees file name, folder label, date and size, never full paths. `show_file`/`open_file` take a number from the latest search; Rust re-checks the file still exists and is inside a permitted folder (after resolving links) before acting.
+- `open_file` (Medium) only opens photos, documents, videos and music. Programs, scripts, shortcuts, installers, web pages and unknown types can only be shown in their folder.
+
 ## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |

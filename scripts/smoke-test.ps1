@@ -14,7 +14,7 @@ Check (Find-ByName $win "Stop" $CT::Button) "sees Stop button" "no Stop button"
 Click $win "Settings"
 # These come from the get_app_status IPC round-trip, validated by zod.
 Check (Find-ByName $win "What this version can do") "sees capability report" "capability report missing"
-Check (Find-ByName $win "Using your web browser: websites, reading, links, searching, buttons") "computer control reported as limited" "computer control status missing"
+Check (Find-ByName $win "Your web browser, making the screen bigger, and finding your files (if allowed)") "computer control reported as limited" "computer control status missing"
 Check (Find-ByName $win "Available (Windows voices)") "a Windows voice is installed for spoken replies" "no Windows voice found"
 Check (Find-ByName $win "Listening (Microsoft Azure Speech)") "listening setup section shown" "listening setup section missing"
 Check (Find-ByName $win "Understanding requests (Google Gemini)") "assistant setup section shown" "assistant setup section missing"

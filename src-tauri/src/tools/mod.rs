@@ -2,6 +2,8 @@
 
 #[cfg(windows)]
 pub mod browser;
+#[cfg(windows)]
+pub mod files;
 pub mod open_app;
 #[cfg(windows)]
 pub mod screen;
