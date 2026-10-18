@@ -69,6 +69,19 @@ pub fn process_image_path(pid: u32) -> Option<PathBuf> {
     )))
 }
 
+/// The computer's local date and time, already formatted for the model's instructions.
+pub fn local_now() -> String {
+    let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    crate::agent::prompt::format_local_time(
+        t.wYear,
+        t.wMonth,
+        t.wDayOfWeek,
+        t.wDay,
+        t.wHour,
+        t.wMinute,
+    )
+}
+
 /// Executable registered to open `https:` links, i.e. the user's default browser.
 pub fn default_browser_exe() -> Option<PathBuf> {
     let mut buf = vec![0u16; 1024];

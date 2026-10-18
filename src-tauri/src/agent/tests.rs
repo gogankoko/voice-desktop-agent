@@ -883,3 +883,21 @@ fn live_browser_agent_on_local_test_page() {
     println!("after declining: {}", d.reply);
     assert!(d.actions.is_empty(), "declined: nothing clicked");
 }
+
+/// Live: the model knows today's date from the request. Run:
+/// cargo test --manifest-path src-tauri/Cargo.toml live_date -- --ignored --nocapture
+#[test]
+#[ignore = "live call using the owner's stored Gemini key"]
+fn live_date_awareness() {
+    let key = crate::secrets::load_gemini_key().unwrap().expect("a Gemini key is stored");
+    let model = super::gemini::Gemini::new(reqwest::Client::new(), key, false);
+    let mut run = TaskRun::new(&[], "What is today's date, and what year is it?", false);
+    match block_on(run.drive(&model, &FakeDesktop::default(), &Cancel::default(), &mut |_| {})) {
+        Ok(Drive::Finished(out, _)) => {
+            println!("local now: {}\nreply: {}", crate::tools::win::local_now(), out.reply);
+            let year = crate::tools::win::local_now().split(", ").next().unwrap().rsplit(' ').next().unwrap().to_string();
+            assert!(out.reply.contains(&year), "reply should mention {year}");
+        }
+        other => panic!("unexpected: {:?}", other.err()),
+    }
+}
