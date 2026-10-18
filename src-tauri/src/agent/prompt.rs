@@ -172,6 +172,14 @@ Current date and time (the person's computer, local time): {now}. Use it for any
     )
 }
 
+/// The name the person gave the assistant (validated: one or two words of letters).
+pub fn name_line(name: &str) -> String {
+    format!(
+        "\n\nYour name is {name}. The person may call you by it; if asked your name, say it. \
+         They can change it in Settings."
+    )
+}
+
 pub fn system_instruction(practice: bool) -> String {
     if practice {
         format!("{SYSTEM_INSTRUCTION}{PRACTICE_ADDENDUM}")

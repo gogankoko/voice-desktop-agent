@@ -15,6 +15,7 @@
     "allow-clear-azure-speech",
     "allow-get-speech-token",
     "allow-speak-natural",
+    "allow-get-wake-status",
     "allow-get-assistant-setup",
     "allow-save-gemini-key",
     "allow-clear-gemini-key",

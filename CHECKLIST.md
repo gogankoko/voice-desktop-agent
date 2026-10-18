@@ -141,6 +141,13 @@
 - [x] "Try this voice" in Settings; long read-aloud articles keep the Windows voice so they don't use up the free allowance
 - [x] Live: Azure returned MP3 audio for the stored key; in the real app replies were spoken with the natural voice (16-21 KB of audio per short reply) with no fallback logged
 
+## Name and wake word
+- [x] Name the assistant in Settings (default "Nova"; one or two words of letters, checked in Rust); the header shows it and the AI introduces itself by it
+- [x] Optional (off by default) wake word: "Hey <name>", "OK <name>", "Hi <name>" or "<name>" starts listening like the button; detected by Windows' offline speech recognition, only for those phrases; nothing is sent until it's heard
+- [x] Doesn't interrupt listening or work in progress, and ignores its own name in what it's saying; restarts itself if Windows ends the session; clear status in Settings (on / why it can't)
+- [x] Live: in the real app the switch turned listening for "Nova" on (status shown) and off again
+- [ ] Detection by a real voice not yet tested: the test computer's microphone cancels its own speakers (level 4/100 at full volume), so the phrase can't be played to it
+
 ## Known limitations
 - Listening needs an Azure Speech key (docs/azure-speech-setup.md); understanding free-form requests needs a Gemini key (docs/gemini-setup.md).
 - Computer actions: open everyday apps and (by name) any app in the Start menu, press buttons and type in app windows, media keys, open https websites, read/scroll pages, follow links, type into ordinary boxes and press buttons, read any window's text when asked, Magnifier/zoom/Settings pages, and (opt-in) find files by name. Without a Gemini key, only a few fixed typed phrases work (e.g. opening the browser).

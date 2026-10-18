@@ -10,6 +10,7 @@ fn main() {
         "clear_azure_speech",
         "get_speech_token",
         "speak_natural",
+        "get_wake_status",
         "get_assistant_setup",
         "save_gemini_key",
         "clear_gemini_key",

@@ -35,11 +35,22 @@ pub fn set_preferences(
     store: State<'_, PrefsStore>,
     prefs: Preferences,
 ) -> Result<Preferences, String> {
+    let prefs = Preferences {
+        assistant_name: crate::prefs::normalise_name(&prefs.assistant_name)?,
+        ..prefs
+    };
     store.save(&prefs).map_err(|e| {
         crate::diag::log("command", format!("set_preferences failed: {e}"));
         "Your settings couldn't be saved.".to_string()
     })?;
+    crate::wake::configure(prefs.wake_word, &prefs.assistant_name);
     Ok(prefs)
+}
+
+/// Whether the assistant is listening for its name, and for what (or why it can't).
+#[tauri::command]
+pub fn get_wake_status() -> crate::wake::WakeStatus {
+    crate::wake::status()
 }
 
 #[tauri::command]

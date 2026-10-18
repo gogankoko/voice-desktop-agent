@@ -27,6 +27,8 @@ tokio = { version = "1", features = ["macros", "sync", "time"] }
 url = "2"
 
 [target.'cfg(windows)'.dependencies]
+# Same Microsoft crate family as `windows` (already in the build through it).
+windows-collections = "0.3"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
@@ -45,6 +47,8 @@ windows = { version = "0.62", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+    "Foundation_Collections",
+    "Media_SpeechRecognition",
 ] }
 
 [profile.release]
