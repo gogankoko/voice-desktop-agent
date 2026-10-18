@@ -47,6 +47,7 @@ export type ConversationEvent =
   | { type: "INTENT_READY" }
   | { type: "REPLY_READY" }
   | { type: "PLAN_READY"; confirmationId?: string }
+  | { type: "NEEDS_CONFIRMATION"; confirmationId: string }
   | { type: "CONFIRMED"; confirmationId: string }
   | { type: "DECLINED" }
   | { type: "ACTION_DONE" }
@@ -78,6 +79,7 @@ const CAN_FAIL: ReadonlySet<Phase> = new Set([
   "verifying",
 ]);
 const CAN_PAUSE: ReadonlySet<Phase> = new Set(["executing", "speaking"]);
+const ASKS_CONFIRMATION: ReadonlySet<Phase> = new Set(["understanding", "planning", "executing"]);
 
 function to(state: ConversationState, phase: Phase, patch: Partial<ConversationState> = {}) {
   return { ...state, phase, pendingConfirmationId: null, resumePhase: null, ...patch };
@@ -117,13 +119,22 @@ export function transition(state: ConversationState, event: ConversationEvent): 
       return phase === "understanding" ? to(state, "planning") : state;
 
     case "REPLY_READY":
-      return phase === "understanding" || phase === "planning" ? to(state, "speaking") : state;
+      // From executing: an approved step turned out to have nothing to do (e.g. it expired).
+      return phase === "understanding" || phase === "planning" || phase === "executing"
+        ? to(state, "speaking")
+        : state;
 
     case "PLAN_READY":
       if (phase !== "planning") return state;
       return event.confirmationId
         ? to(state, "awaiting_confirmation", { pendingConfirmationId: event.confirmationId })
         : to(state, "executing");
+
+    case "NEEDS_CONFIRMATION":
+      // The backend paused before a high-risk action (possibly after earlier steps ran).
+      return ASKS_CONFIRMATION.has(phase) && event.confirmationId
+        ? to(state, "awaiting_confirmation", { pendingConfirmationId: event.confirmationId })
+        : state;
 
     case "CONFIRMED":
       return phase === "awaiting_confirmation" &&
@@ -133,7 +144,8 @@ export function transition(state: ConversationState, event: ConversationEvent): 
         : state;
 
     case "DECLINED":
-      return phase === "awaiting_confirmation" ? to(state, "speaking") : state;
+      // Back to planning: the assistant works out what to say (or do) instead.
+      return phase === "awaiting_confirmation" ? to(state, "planning") : state;
 
     case "ACTION_DONE":
       return phase === "executing" ? to(state, "verifying") : state;

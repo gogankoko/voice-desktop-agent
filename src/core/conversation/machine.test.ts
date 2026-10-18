@@ -74,6 +74,23 @@ describe("conversation machine", () => {
       }
     });
 
+    it("a later step can ask for a new confirmation with a new id", () => {
+      const executing = run([...toConfirmation, { type: "CONFIRMED", confirmationId: "c-1" }]);
+      const again = transition(executing, { type: "NEEDS_CONFIRMATION", confirmationId: "c-2" });
+      expect(again.phase).toBe("awaiting_confirmation");
+      expect(transition(again, { type: "CONFIRMED", confirmationId: "c-1" }).phase).toBe(
+        "awaiting_confirmation",
+      );
+      expect(transition(again, { type: "CONFIRMED", confirmationId: "c-2" }).phase).toBe("executing");
+    });
+
+    it("cannot ask for confirmation from idle, speaking or after Stop", () => {
+      for (const phase of ["idle", "speaking", "cancelled", "listening"] as const) {
+        const s = transition({ ...initialState, phase }, { type: "NEEDS_CONFIRMATION", confirmationId: "x" });
+        expect(s.phase, phase).toBe(phase);
+      }
+    });
+
     it("ignores a duplicate confirmation after execution has started", () => {
       const executing = run([...toConfirmation, { type: "CONFIRMED", confirmationId: "c-1" }]);
       const after = run(
@@ -85,11 +102,11 @@ describe("conversation machine", () => {
 
     it("clears the confirmation id once the gate is left", () => {
       const declined = run([...toConfirmation, { type: "DECLINED" }]);
-      expect(declined.phase).toBe("speaking");
+      expect(declined.phase).toBe("planning");
       expect(declined.pendingConfirmationId).toBeNull();
       // A late confirmation for the declined action must not execute anything.
       expect(transition(declined, { type: "CONFIRMED", confirmationId: "c-1" }).phase).toBe(
-        "speaking",
+        "planning",
       );
     });
   });

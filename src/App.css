@@ -381,3 +381,88 @@ summary {
     scroll-behavior: auto !important;
   }
 }
+
+/* Confirmation dialog */
+.confirm {
+  max-width: 34em;
+  width: calc(100% - 2rem);
+  border: 3px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.confirm::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.confirm h2 {
+  margin-top: 0;
+}
+
+.confirm-action {
+  font-size: 1.2em;
+  font-weight: 700;
+}
+
+.confirm-details div {
+  display: grid;
+  grid-template-columns: 7em 1fr;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.confirm-details dt {
+  font-weight: 600;
+}
+
+.confirm-details dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.confirm-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 1.25rem 0 0.75rem;
+}
+
+.confirm-buttons button {
+  flex: 1 1 10em;
+  min-height: 64px;
+  font-size: 1.15em;
+  font-weight: 700;
+}
+
+.confirm-yes {
+  border-color: var(--accent);
+}
+
+.confirm-no {
+  border-color: var(--stop);
+}
+
+.confirm-speak {
+  width: 100%;
+}
+
+.practice-badge {
+  display: inline-block;
+  margin: 0 0 0.5rem;
+  padding: 0.2em 0.7em;
+  border: 2px dashed var(--border);
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.practice-banner {
+  margin: 0.75rem 1.25rem 0;
+  padding: 0.5rem 1rem;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  font-weight: 600;
+}

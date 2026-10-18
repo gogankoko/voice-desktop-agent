@@ -8,13 +8,23 @@ export const actionReportSchema = z.strictObject({
   tool: z.string(),
   ok: z.boolean(),
   verified: z.boolean(),
+  practice: z.boolean(),
   summary: z.string(),
+});
+
+export const confirmationRequestSchema = z.strictObject({
+  id: z.string().min(1),
+  action: z.string(),
+  details: z.array(z.strictObject({ label: z.string(), value: z.string() })),
+  practice: z.boolean(),
+  expiresInSecs: z.number().int().positive(),
 });
 
 export const agentOutcomeSchema = z.strictObject({
   reply: z.string(),
   actions: z.array(actionReportSchema),
   cancelled: z.boolean(),
+  confirmation: confirmationRequestSchema.nullable(),
 });
 
 export const assistantSetupSchema = z.strictObject({
@@ -30,10 +40,20 @@ const progressSchema = z.strictObject({
 
 export type ActionReport = z.infer<typeof actionReportSchema>;
 export type AgentOutcome = z.infer<typeof agentOutcomeSchema>;
+export type ConfirmationRequest = z.infer<typeof confirmationRequestSchema>;
 export type AssistantSetup = z.infer<typeof assistantSetupSchema>;
 
 export async function runAgent(taskId: number, text: string): Promise<AgentOutcome> {
   return agentOutcomeSchema.parse(await invoke("run_agent", { taskId, text }));
+}
+
+/** The user's explicit answer to a confirmation question. */
+export async function confirmAgent(
+  taskId: number,
+  confirmationId: string,
+  approved: boolean,
+): Promise<AgentOutcome> {
+  return agentOutcomeSchema.parse(await invoke("confirm_agent", { taskId, confirmationId, approved }));
 }
 
 export async function cancelAgent(): Promise<void> {
