@@ -58,6 +58,15 @@ export async function confirmAgent(
   return agentOutcomeSchema.parse(await invoke("confirm_agent", { taskId, confirmationId, approved }));
 }
 
+/** Pause after the step in progress; resolves false if nothing was running. */
+export async function pauseAgent(): Promise<boolean> {
+  return z.boolean().parse(await invoke("pause_agent"));
+}
+
+export async function resumeAgent(): Promise<boolean> {
+  return z.boolean().parse(await invoke("resume_agent"));
+}
+
 export async function cancelAgent(): Promise<void> {
   await invoke("cancel_agent");
 }

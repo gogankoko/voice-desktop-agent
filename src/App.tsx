@@ -10,6 +10,8 @@ import {
   type ConfirmationRequest,
   cancelAgent,
   confirmAgent,
+  pauseAgent,
+  resumeAgent,
   onAgentExecuting,
   runAgent,
 } from "./ipc/agent";
@@ -59,6 +61,9 @@ const AVAILABILITY_TEXT: Record<Availability, string> = {
   limited: "Using your web browser: websites, reading, links, searching, buttons",
   available: "Available",
 };
+
+/** The assistant is working on a request (Pause is offered). */
+const WORKING: ReadonlySet<Phase> = new Set(["understanding", "planning", "executing", "verifying"]);
 
 /** Phases in which pressing the microphone starts a new turn (barge-in while speaking). */
 const MIC_STARTS: ReadonlySet<Phase> = new Set(["idle", "cancelled", "speaking"]);
@@ -261,6 +266,18 @@ export default function App() {
     addMessage("you", text);
     setDraft("");
     dispatch({ type: "TEXT_SUBMITTED", text });
+  }
+
+  async function onPause() {
+    if (await pauseAgent().catch(() => false)) {
+      dispatch({ type: "PAUSE" });
+      setStepText("");
+    }
+  }
+
+  async function onResume() {
+    await resumeAgent().catch(() => false);
+    dispatch({ type: "RESUME" });
   }
 
   function onStop() {
@@ -498,6 +515,25 @@ export default function App() {
       )}
 
       <footer className="stopbar">
+        {assistantReady.current && (WORKING.has(state.phase) || state.phase === "paused") && (
+          <button
+            type="button"
+            className="pause"
+            onClick={() => void (state.phase === "paused" ? onResume() : onPause())}
+          >
+            {state.phase === "paused" ? (
+              <>
+                <span aria-hidden="true">▶</span>
+                <span>Continue</span>
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">❚❚</span>
+                <span>Pause</span>
+              </>
+            )}
+          </button>
+        )}
         <button
           type="button"
           className="stop"

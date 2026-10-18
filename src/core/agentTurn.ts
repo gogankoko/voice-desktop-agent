@@ -58,11 +58,11 @@ export async function answerConfirmation(
 type StartExecuting = () => void;
 
 async function withProgress(deps: AgentTurnDeps, body: (s: StartExecuting) => Promise<void>) {
-  let executing = false;
+  // Both events are no-ops unless the conversation is still before "executing", so this is
+  // safe to call repeatedly (e.g. when a step started while the user had paused).
   const startExecuting = () => {
-    if (executing || !deps.isCurrent()) return;
-    executing = true;
-    deps.dispatch({ type: "INTENT_READY" }); // no-ops when already past understanding
+    if (!deps.isCurrent()) return;
+    deps.dispatch({ type: "INTENT_READY" });
     deps.dispatch({ type: "PLAN_READY" });
   };
   const unsubscribe = await deps.onExecuting((detail) => {
@@ -95,6 +95,9 @@ async function call(
     dispatch({ type: "RECOVERY_DONE" });
     return;
   }
+
+  // If the last step finished while the user had paused, show the result anyway.
+  if (isCurrent()) dispatch({ type: "RESUME" });
 
   if (!isCurrent() || outcome.cancelled) {
     const happened = outcome.actions.filter((a) => a.ok && !a.practice);

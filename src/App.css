@@ -362,6 +362,11 @@ summary {
   border-top: 2px solid var(--border);
 }
 
+.stopbar {
+  gap: 1rem;
+}
+
+.pause,
 .stop {
   display: inline-flex;
   align-items: center;

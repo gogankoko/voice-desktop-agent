@@ -272,6 +272,22 @@ fn progress(app: &AppHandle, task_id: u32) -> impl FnMut(agent::Progress) + '_ {
     }
 }
 
+/// Pauses the current request after the step in progress. Returns whether one was running.
+#[tauri::command]
+pub fn pause_agent(state: State<'_, AgentState>) -> bool {
+    let held = state.hold_current();
+    if held {
+        crate::diag::log("agent", "paused by user");
+    }
+    held
+}
+
+/// Continues a paused request. Returns whether one was running.
+#[tauri::command]
+pub fn resume_agent(state: State<'_, AgentState>) -> bool {
+    state.release_current()
+}
+
 /// Stops the current request: no further model calls or tool actions start.
 #[tauri::command]
 pub fn cancel_agent(state: State<'_, AgentState>) {

@@ -45,6 +45,8 @@ pub fn run() {
             commands::clear_gemini_key,
             commands::run_agent,
             commands::cancel_agent,
+            commands::pause_agent,
+            commands::resume_agent,
             commands::confirm_agent,
             commands::get_diagnostics,
             commands::clear_diagnostics,

@@ -69,8 +69,9 @@ class Harness {
       return () => void this.unsubscribed++;
     },
     dispatch: (e: ConversationEvent) => {
+      const before = this.state.phase;
       this.state = transition(this.state, e);
-      this.phases.push(this.state.phase);
+      if (this.state.phase !== before) this.phases.push(this.state.phase);
     },
     say: (t: string) => void this.said.push(t),
     note: (a: ActionReport) => void this.notes.push(a),
@@ -179,6 +180,18 @@ describe("confirmations", () => {
     await answerConfirmation(QUESTION, true, h.deps);
     expect(h.notes).toEqual([]);
     expect(h.state.phase).toBe("speaking");
+  });
+
+  it("a result that arrives while paused is still shown", async () => {
+    const h = new Harness(async (self) => {
+      self.executingCb?.();
+      self.deps.dispatch({ type: "PAUSE" });
+      expect(self.state.phase).toBe("paused");
+      return outcome({ reply: "Done.", actions: [OPENED] });
+    });
+    await runAgentRequest("open", h.deps);
+    expect(h.state.phase).toBe("speaking");
+    expect(h.said).toEqual(["Done."]);
   });
 
   it("a later step can ask again", async () => {

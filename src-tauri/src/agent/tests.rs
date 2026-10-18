@@ -1125,3 +1125,91 @@ fn read_aloud_text_goes_to_the_app_not_the_model() {
         "article text must never reach the model"
     );
 }
+
+// ---- Pause (hold) ----
+
+#[test]
+fn held_task_starts_nothing_until_released() {
+    let cancel = std::sync::Arc::new(Cancel::default());
+    cancel.hold();
+    let c2 = cancel.clone();
+    let released_at = std::sync::Arc::new(Mutex::new(None));
+    let r2 = released_at.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        *r2.lock().unwrap() = Some(std::time::Instant::now());
+        c2.release();
+    });
+    let model = ScriptedModel::new(vec![Ok(text_turn("Hello"))]);
+    let desk = FakeDesktop::default();
+    let mut run = TaskRun::new(&[], "hi", false);
+    let d = block_on(run.drive(&model, &desk, &cancel, &mut |_| {})).unwrap();
+    let called_at = std::time::Instant::now();
+    assert!(matches!(d, Drive::Finished(..)));
+    assert!(released_at.lock().unwrap().unwrap() <= called_at);
+}
+
+#[test]
+fn stop_during_a_hold_cancels_promptly() {
+    let cancel = std::sync::Arc::new(Cancel::default());
+    cancel.hold();
+    let c2 = cancel.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        c2.cancel();
+    });
+    let model = ScriptedModel::new(vec![Ok(text_turn("Hello"))]);
+    let desk = FakeDesktop::default();
+    let mut run = TaskRun::new(&[], "hi", false);
+    let d = block_on(run.drive(&model, &desk, &cancel, &mut |_| {})).unwrap();
+    assert!(matches!(d, Drive::Cancelled(_)));
+    assert_eq!(model.calls(), 0);
+}
+
+#[test]
+fn release_is_not_mistaken_for_cancel() {
+    let cancel = Cancel::default();
+    cancel.hold();
+    cancel.release();
+    assert!(!cancel.is_cancelled());
+    // cancelled() must not complete just because release() notified.
+    let done = block_on(async {
+        tokio::select! {
+            _ = cancel.cancelled() => true,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => false,
+        }
+    });
+    assert!(!done);
+}
+
+#[test]
+fn held_time_does_not_count_and_long_holds_cancel() {
+    let cancel = Cancel::default();
+    cancel.hold();
+    // Held throughout: the 250 ms active limit must NOT be reached; after the 500 ms max hold the
+    // task is cancelled (the task then ends as Cancelled, not as a timeout).
+    let limit_reached = block_on(async {
+        tokio::select! {
+            _ = active_time_limit(&cancel, std::time::Duration::from_millis(250), std::time::Duration::from_millis(500)) => true,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(1500)) => false,
+        }
+    });
+    assert!(!limit_reached, "held time must not count toward the limit");
+    assert!(
+        cancel.is_cancelled(),
+        "a hold longer than the maximum cancels the task"
+    );
+}
+
+#[test]
+fn active_time_counts_when_not_held() {
+    let cancel = Cancel::default();
+    let reached = block_on(async {
+        tokio::select! {
+            _ = active_time_limit(&cancel, std::time::Duration::from_millis(250), std::time::Duration::from_secs(60)) => true,
+            _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => false,
+        }
+    });
+    assert!(reached);
+    assert!(!cancel.is_cancelled());
+}

@@ -11,7 +11,7 @@ export const PHASE_TEXT: Record<Phase, { label: string; symbol: string }> = {
   executing: { label: "Doing it now…", symbol: "▶" },
   verifying: { label: "Checking it worked…", symbol: "✓?" },
   speaking: { label: "Speaking", symbol: "♪" },
-  paused: { label: "Paused", symbol: "❚❚" },
+  paused: { label: "Paused: press Continue when you're ready", symbol: "❚❚" },
   recovering: { label: "Something went wrong, sorting it out…", symbol: "!" },
   cancelled: { label: "Stopped", symbol: "■" },
 };

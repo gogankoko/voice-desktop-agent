@@ -36,6 +36,8 @@ pub const MAX_MODEL_CALLS: usize = 8;
 pub const TASK_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long a confirmation question stays answerable.
 pub const CONFIRMATION_TTL: Duration = Duration::from_secs(120);
+/// A task the user paused (held) longer than this is cancelled, freeing the assistant.
+pub const MAX_HOLD: Duration = Duration::from_secs(15 * 60);
 /// Completed requests kept as context (text only, in memory, never saved).
 const HISTORY_TURNS: usize = 6;
 pub const MAX_REQUEST_CHARS: usize = 2000;
@@ -198,6 +200,8 @@ impl ToolExecutor for DesktopExecutor {
 #[derive(Default)]
 pub struct Cancel {
     flag: AtomicBool,
+    /// Paused by the user: no new step starts until released (or cancelled).
+    held: AtomicBool,
     notify: Notify,
 }
 
@@ -212,13 +216,63 @@ impl Cancel {
     }
 
     pub async fn cancelled(&self) {
-        let notified = self.notify.notified();
-        tokio::pin!(notified);
-        notified.as_mut().enable(); // register before checking, so a cancel can't slip between
-        if self.is_cancelled() {
-            return;
+        // The same Notify also wakes on release(), so re-check rather than assume.
+        loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable(); // register before checking, so a cancel can't slip between
+            if self.is_cancelled() {
+                return;
+            }
+            notified.await;
         }
-        notified.await;
+    }
+
+    pub fn hold(&self) {
+        self.held.store(true, Ordering::SeqCst);
+    }
+
+    pub fn release(&self) {
+        self.held.store(false, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    pub fn is_held(&self) -> bool {
+        self.held.load(Ordering::SeqCst)
+    }
+
+    /// Returns once not held, or immediately when cancelled.
+    pub async fn wait_while_held(&self) {
+        loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if !self.is_held() || self.is_cancelled() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+/// Completes when the task has been *actively* running for `limit` (held time doesn't count).
+/// A hold longer than `max_hold` cancels the task.
+async fn active_time_limit(cancel: &Cancel, limit: Duration, max_hold: Duration) {
+    let tick = Duration::from_millis(250);
+    let (mut active, mut held) = (Duration::ZERO, Duration::ZERO);
+    loop {
+        tokio::time::sleep(tick).await;
+        if cancel.is_held() {
+            held += tick;
+            if held >= max_hold {
+                cancel.cancel();
+            }
+        } else {
+            active += tick;
+            if active >= limit {
+                return;
+            }
+        }
     }
 }
 
@@ -246,6 +300,9 @@ pub const TOO_MANY_STEPS_REPLY: &str =
     "Sorry, I couldn't finish that. Could you ask again in a simpler way?";
 const EXPIRED_REPLY: &str =
     "I waited a while for your answer, so to be safe I didn't do it. Just ask again if you'd like.";
+
+/// The active-time limit was reached.
+pub struct TimedOut;
 
 /// A high-risk call waiting for the user's answer.
 #[derive(Debug, Clone)]
@@ -314,6 +371,7 @@ impl TaskRun {
     ) -> Result<Drive, ModelError> {
         loop {
             while let Some(call) = self.queue.pop_front() {
+                cancel.wait_while_held().await;
                 if cancel.is_cancelled() {
                     return Ok(Drive::Cancelled(std::mem::take(&mut self.actions)));
                 }
@@ -348,6 +406,7 @@ impl TaskRun {
             if self.model_calls >= MAX_MODEL_CALLS {
                 return Ok(self.finish(TOO_MANY_STEPS_REPLY.into()));
             }
+            cancel.wait_while_held().await;
             if cancel.is_cancelled() {
                 return Ok(Drive::Cancelled(std::mem::take(&mut self.actions)));
             }
@@ -858,6 +917,28 @@ impl AgentState {
         }
     }
 
+    /// Pause: the step in progress finishes, nothing new starts. Returns false if nothing is running.
+    pub fn hold_current(&self) -> bool {
+        match self.current.lock().expect("agent lock").as_ref() {
+            Some(c) => {
+                c.hold();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Continue after a pause. Returns false if nothing is running.
+    pub fn release_current(&self) -> bool {
+        match self.current.lock().expect("agent lock").as_ref() {
+            Some(c) => {
+                c.release();
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Stop: cancels the running request and forgets any unanswered confirmation.
     pub fn cancel_current(&self) {
         if let Some(c) = self.current.lock().expect("agent lock").as_ref() {
@@ -879,7 +960,7 @@ impl AgentState {
     /// Turns a drive result into what the UI gets, storing paused requests.
     fn settle(
         &self,
-        result: Result<Result<Drive, ModelError>, tokio::time::error::Elapsed>,
+        result: Result<Result<Drive, ModelError>, TimedOut>,
         run: TaskRun,
         model_id: &'static str,
     ) -> Result<AgentOutcome, String> {
@@ -946,11 +1027,10 @@ impl AgentState {
         let cancel = self.begin()?;
         let history = self.history.lock().expect("agent lock").clone();
         let mut run = TaskRun::new(&history, utterance, practice);
-        let result = tokio::time::timeout(
-            TASK_TIMEOUT,
-            run.drive(model, exec, &cancel, &mut on_executing),
-        )
-        .await;
+        let result = tokio::select! {
+            r = run.drive(model, exec, &cancel, &mut on_executing) => Ok(r),
+            _ = active_time_limit(&cancel, TASK_TIMEOUT, MAX_HOLD) => Err(TimedOut),
+        };
         self.settle(result, run, model.model_id())
     }
 
@@ -987,12 +1067,13 @@ impl AgentState {
         let Paused {
             mut run, pending, ..
         } = paused;
-        let result = tokio::time::timeout(TASK_TIMEOUT, async {
-            run.resolve(pending, approved, exec, &mut on_executing)
-                .await;
-            run.drive(model, exec, &cancel, &mut on_executing).await
-        })
-        .await;
+        let result = tokio::select! {
+            r = async {
+                run.resolve(pending, approved, exec, &mut on_executing).await;
+                run.drive(model, exec, &cancel, &mut on_executing).await
+            } => Ok(r),
+            _ = active_time_limit(&cancel, TASK_TIMEOUT, MAX_HOLD) => Err(TimedOut),
+        };
         self.settle(result, run, model.model_id())
     }
 

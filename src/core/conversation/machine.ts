@@ -78,7 +78,13 @@ const CAN_FAIL: ReadonlySet<Phase> = new Set([
   "executing",
   "verifying",
 ]);
-const CAN_PAUSE: ReadonlySet<Phase> = new Set(["executing", "speaking"]);
+const CAN_PAUSE: ReadonlySet<Phase> = new Set([
+  "understanding",
+  "planning",
+  "executing",
+  "verifying",
+  "speaking",
+]);
 const ASKS_CONFIRMATION: ReadonlySet<Phase> = new Set(["understanding", "planning", "executing"]);
 
 function to(state: ConversationState, phase: Phase, patch: Partial<ConversationState> = {}) {
