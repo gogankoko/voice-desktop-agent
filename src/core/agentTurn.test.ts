@@ -50,6 +50,7 @@ class Harness {
   confirmCalls: Array<[string, boolean]> = [];
   executingCb: (() => void) | null = null;
   unsubscribed = 0;
+  progress: string[] = [];
 
   constructor(
     private run: Backend,
@@ -62,8 +63,8 @@ class Harness {
       this.confirmCalls.push([id, approved]);
       return this.confirm(this);
     },
-    onExecuting: async (cb: () => void) => {
-      this.executingCb = cb;
+    onExecuting: async (cb: (detail: string) => void) => {
+      this.executingCb = () => cb("Opening example.org");
       return () => void this.unsubscribed++;
     },
     dispatch: (e: ConversationEvent) => {
@@ -73,6 +74,7 @@ class Harness {
     say: (t: string) => void this.said.push(t),
     note: (a: ActionReport) => void this.notes.push(a),
     askConfirmation: (c: ConfirmationRequest) => void this.asked.push(c),
+    onProgress: (d: string) => void this.progress.push(d),
     isCurrent: () => this.current,
   };
 
@@ -99,6 +101,7 @@ describe("runAgentRequest", () => {
     });
     await runAgentRequest("open", h.deps);
     expect(h.phases).toEqual(["planning", "executing", "verifying", "speaking"]);
+    expect(h.progress).toEqual(["Opening example.org", ""]);
     expect(h.notes).toEqual([OPENED]);
   });
 

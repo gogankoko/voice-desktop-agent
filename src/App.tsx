@@ -78,6 +78,7 @@ export default function App() {
   const [question, setQuestion] = useState<ConfirmationRequest | null>(null);
   const [answerHint, setAnswerHint] = useState<string | null>(null);
   const [answerListening, setAnswerListening] = useState(false);
+  const [stepText, setStepText] = useState("");
   const [prefsError, setPrefsError] = useState<string | null>(null);
   const [synth] = useState(() => new WindowsSynthesizer());
   const [voiceInstalled, setVoiceInstalled] = useState(synth.available);
@@ -151,6 +152,7 @@ export default function App() {
       runAgent: (t) => runAgent(id, t),
       confirmAgent: (cid, approved) => confirmAgent(id, cid, approved),
       onExecuting: (cb) => onAgentExecuting(id, cb),
+      onProgress: setStepText,
       dispatch,
       say,
       note: noteAction,
@@ -259,6 +261,7 @@ export default function App() {
   function onStop() {
     taskId.current++;
     setQuestion(null);
+    setStepText("");
     void cancelAgent().catch(() => {});
     recognizer.current?.cancel();
     synth.cancel();
@@ -309,7 +312,11 @@ export default function App() {
             <span className={`status-symbol phase-${state.phase}`} aria-hidden="true">
               {phase.symbol}
             </span>
-            <span className="status-label">{phase.label}</span>
+            <span className="status-label">
+              {stepText && (state.phase === "executing" || state.phase === "planning")
+                ? `${stepText}…`
+                : phase.label}
+            </span>
           </section>
 
           <div className="mic-area">

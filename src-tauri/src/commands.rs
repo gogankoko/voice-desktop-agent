@@ -4,6 +4,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::agent;
 use crate::agent::gemini::ChatModel as _;
 use crate::agent::{AgentOutcome, AgentState, DesktopExecutor, gemini};
 
@@ -129,6 +130,7 @@ struct AgentProgress {
     task_id: u32,
     stage: &'static str,
     tool: &'static str,
+    detail: String,
 }
 
 /// Runs one request through the model and the validated tool registry.
@@ -256,14 +258,15 @@ fn gemini_key() -> Result<String, String> {
         .ok_or_else(|| "The assistant isn't set up yet. Add a Gemini key in Settings.".to_string())
 }
 
-fn progress(app: &AppHandle, task_id: u32) -> impl FnMut(&'static str) + '_ {
-    move |tool| {
+fn progress(app: &AppHandle, task_id: u32) -> impl FnMut(agent::Progress) + '_ {
+    move |p| {
         let _ = app.emit(
             "agent-progress",
             AgentProgress {
                 task_id,
                 stage: "executing",
-                tool,
+                tool: p.tool,
+                detail: p.detail,
             },
         );
     }

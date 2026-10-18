@@ -40,6 +40,20 @@ pub const CONFIRMATION_TTL: Duration = Duration::from_secs(120);
 const HISTORY_TURNS: usize = 6;
 pub const MAX_REQUEST_CHARS: usize = 2000;
 
+/// One step starting, for the "what is it doing right now" status line.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Progress {
+    pub tool: &'static str,
+    /// Plain-language, e.g. "Typing into Search".
+    pub detail: String,
+}
+
+impl std::fmt::Display for Progress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.detail)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionReport {
@@ -274,7 +288,7 @@ impl TaskRun {
         model: &M,
         exec: &E,
         cancel: &Cancel,
-        on_executing: &mut impl FnMut(&'static str),
+        on_executing: &mut impl FnMut(Progress),
     ) -> Result<Drive, ModelError> {
         loop {
             while let Some(call) = self.queue.pop_front() {
@@ -339,7 +353,7 @@ impl TaskRun {
         pending: PendingAction,
         approved: bool,
         exec: &E,
-        on_executing: &mut impl FnMut(&'static str),
+        on_executing: &mut impl FnMut(Progress),
     ) {
         let result = if approved {
             let mut r = self
@@ -436,10 +450,13 @@ impl TaskRun {
         call: &ProposedCall,
         v: ValidatedCall,
         exec: &E,
-        on_executing: &mut impl FnMut(&'static str),
+        on_executing: &mut impl FnMut(Progress),
     ) -> Value {
         self.done.insert(v.clone());
-        on_executing(v.tool_name());
+        on_executing(Progress {
+            tool: v.tool_name(),
+            detail: v.describe(),
+        });
         match v {
             ValidatedCall::OpenApplication(app) => match exec.open_application(app).await {
                 Ok(r) => {
@@ -826,7 +843,7 @@ impl AgentState {
         exec: &E,
         utterance: &str,
         practice: bool,
-        mut on_executing: impl FnMut(&'static str),
+        mut on_executing: impl FnMut(Progress),
     ) -> Result<AgentOutcome, String> {
         let utterance = utterance.trim();
         if utterance.is_empty() || utterance.chars().count() > MAX_REQUEST_CHARS {
@@ -863,7 +880,7 @@ impl AgentState {
         exec: &E,
         id: &str,
         approved: bool,
-        mut on_executing: impl FnMut(&'static str),
+        mut on_executing: impl FnMut(Progress),
     ) -> Result<AgentOutcome, String> {
         let paused = {
             let mut slot = self.paused.lock().expect("agent lock");

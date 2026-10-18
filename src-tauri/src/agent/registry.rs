@@ -144,6 +144,32 @@ impl ValidatedCall {
         }
     }
 
+    /// What the step is doing, in plain words, for the status line while it runs.
+    pub fn describe(&self) -> String {
+        match self {
+            ValidatedCall::OpenApplication(_) => "Opening your web browser".into(),
+            ValidatedCall::OpenWebsite(u) => format!("Opening {}", u.site()),
+            ValidatedCall::ReadWebpage => "Reading the page".into(),
+            ValidatedCall::ScrollWebpage { down } => {
+                if *down {
+                    "Scrolling down".into()
+                } else {
+                    "Scrolling up".into()
+                }
+            }
+            ValidatedCall::ListLinks => "Looking at the links on the page".into(),
+            ValidatedCall::FollowLink { text, .. } => format!("Clicking \u{201c}{text}\u{201d}"),
+            ValidatedCall::ListControls => "Looking at the page".into(),
+            ValidatedCall::PressButton { label, .. } => format!("Pressing \u{201c}{label}\u{201d}"),
+            ValidatedCall::TypeText { label, text, .. } => {
+                format!("Typing \u{201c}{text}\u{201d} into \u{201c}{label}\u{201d}")
+            }
+            ValidatedCall::PracticeSendMessage { to, .. } => {
+                format!("Sending the practice message to {to}")
+            }
+        }
+    }
+
     /// Actions with an effect that shouldn't happen twice in one request. Reading,
     /// listing and scrolling may legitimately repeat.
     pub fn run_once(&self) -> bool {

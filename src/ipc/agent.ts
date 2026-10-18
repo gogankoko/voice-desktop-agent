@@ -36,6 +36,7 @@ const progressSchema = z.strictObject({
   taskId: z.number(),
   stage: z.literal("executing"),
   tool: z.string(),
+  detail: z.string(),
 });
 
 export type ActionReport = z.infer<typeof actionReportSchema>;
@@ -61,10 +62,14 @@ export async function cancelAgent(): Promise<void> {
 }
 
 /** Calls `onExecuting` when the backend starts a tool for task `taskId`. Returns an unsubscribe. */
-export async function onAgentExecuting(taskId: number, onExecuting: () => void): Promise<() => void> {
+/** Calls `onStep` with a plain description each time the backend starts a step for task `taskId`. */
+export async function onAgentExecuting(
+  taskId: number,
+  onStep: (detail: string) => void,
+): Promise<() => void> {
   return listen("agent-progress", (event) => {
     const p = progressSchema.safeParse(event.payload);
-    if (p.success && p.data.taskId === taskId) onExecuting();
+    if (p.success && p.data.taskId === taskId) onStep(p.data.detail);
   });
 }
 
