@@ -58,13 +58,17 @@ pub fn redact(s: &str) -> String {
     }
 }
 
-/// Long unbroken runs of key/token characters (API keys, JWTs, signatures).
+/// Long unbroken runs of key/token characters (API keys, JWTs, signatures). Secrets either
+/// mix upper and lower case (base64, JWTs) or are long (hex keys are 32+); readable names like
+/// `model=gemini-3.5-flash-lite` are neither.
 fn looks_like_secret(w: &str) -> bool {
-    w.len() >= 24
-        && w.chars()
-            .all(|c| c.is_ascii_alphanumeric() || "-_.=+/".contains(c))
-        && w.chars().any(|c| c.is_ascii_digit())
-        && w.chars().any(|c| c.is_ascii_alphabetic())
+    let charset = w
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "-_.=+/".contains(c));
+    let digit = w.chars().any(|c| c.is_ascii_digit());
+    let mixed_case =
+        w.chars().any(|c| c.is_ascii_uppercase()) && w.chars().any(|c| c.is_ascii_lowercase());
+    charset && digit && ((w.len() >= 24 && mixed_case) || w.len() >= 32)
 }
 
 /// `C:\Users\Jane\...` → `C:\Users\[user]\...` (also forward slashes).
@@ -176,6 +180,14 @@ mod tests {
             redact("open_website verified=true in 812ms"),
             "open_website verified=true in 812ms"
         );
+    }
+
+    #[test]
+    fn model_names_survive_but_hex_keys_do_not() {
+        let line = "request done model=gemini-3.5-flash-lite actions=[open_website:verified]";
+        assert_eq!(redact(line), line);
+        assert_eq!(redact("0123456789abcdef0123456789abcdef"), "[secret]");
+        assert_eq!(redact(&"Ab1".repeat(9)), "[secret]");
     }
 
     #[test]
