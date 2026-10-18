@@ -142,10 +142,10 @@
 - [x] Live: Azure returned MP3 audio for the stored key; in the real app replies were spoken with the natural voice (16-21 KB of audio per short reply) with no fallback logged
 
 ## Name and wake word
-- [x] Name the assistant in Settings (default "Nova"; one or two words of letters, checked in Rust); the header shows it and the AI introduces itself by it
-- [x] Optional (off by default) wake word: "Hey <name>", "OK <name>", "Hi <name>" or "<name>" starts listening like the button; detected by Windows' offline speech recognition, only for those phrases; nothing is sent until it's heard
+- [x] Name the assistant in Settings (default "VoCare"; one or two words of letters, checked in Rust); the header shows it and the AI introduces itself by it
+- [x] Optional (off by default) wake word: "Hey <name>", "OK <name>", "Hi <name>" or "<name>" starts listening like the button (a name like "VoCare" is also listened for as "Vo Care"); detected by Windows' offline speech recognition, only for those phrases; nothing is sent until it's heard
 - [x] Doesn't interrupt listening or work in progress, and ignores its own name in what it's saying; restarts itself if Windows ends the session; clear status in Settings (on / why it can't)
-- [x] Live: in the real app the switch turned listening for "Nova" on (status shown) and off again
+- [x] Live: in the real app the switch turned listening for "VoCare" on (status shown) and off again
 - [ ] Detection by a real voice not yet tested: the test computer's microphone cancels its own speakers (level 4/100 at full volume), so the phrase can't be played to it
 
 ## Known limitations

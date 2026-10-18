@@ -98,7 +98,7 @@ export default function App() {
     practiceMode: false,
     fileSearch: false,
     voice: "ava",
-    assistantName: "Nova",
+    assistantName: "VoCare",
     wakeWord: false,
   });
   const [nameDraft, setNameDraft] = useState<string | null>(null);

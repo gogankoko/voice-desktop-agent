@@ -21,8 +21,8 @@ const backend: Record<string, unknown> = {
     computerControl: "limited",
     talkShortcut: "Ctrl+Alt+Space",
   },
-  get_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false },
-  set_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false },
+  get_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "VoCare", wakeWord: false },
+  set_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "VoCare", wakeWord: false },
   get_speech_setup: { configured: false, region: null },
   get_assistant_setup: { configured: false, model: "gemini-3.8-flash" },
   get_diagnostics: "",
@@ -167,7 +167,7 @@ describe("requests without an AI key", () => {
 describe("the assistant's name", () => {
   it("can be renamed in Settings and the header follows", async () => {
     await renderApp();
-    expect(screen.getByRole("heading", { level: 1, name: "Nova" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "VoCare" })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     const field = screen.getByRole("textbox", { name: "Assistant's name" });
     await userEvent.clear(field);

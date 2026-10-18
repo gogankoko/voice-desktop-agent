@@ -90,7 +90,7 @@ impl Voice {
     }
 }
 
-pub const DEFAULT_NAME: &str = "Nova";
+pub const DEFAULT_NAME: &str = "VoCare";
 
 /// A name the assistant can be called: one or two words of letters (also - and '), at most
 /// 20 characters. Returns the tidied name.
@@ -105,7 +105,7 @@ pub fn normalise_name(name: &str) -> Result<String, String> {
         Ok(n)
     } else {
         Err(
-            "The name should be one or two words of letters, up to 20 characters, like \"Nova\"."
+            "The name should be one or two words of letters, up to 20 characters, like \"VoCare\"."
                 .into(),
         )
     }
@@ -221,6 +221,8 @@ impl PrefsStore {
             assistant_name: get("assistant_name")?
                 .as_deref()
                 .and_then(|n| normalise_name(n).ok())
+                // "Nova" was the first default name; it's now VoCare.
+                .filter(|n| n != "Nova")
                 .unwrap_or(defaults.assistant_name),
             wake_word: match get("wake_word")?.as_deref() {
                 Some("1") => true,
@@ -276,8 +278,20 @@ mod tests {
     }
 
     #[test]
+    fn the_old_default_name_becomes_vocare() {
+        let store = PrefsStore::open_in_memory().unwrap();
+        store
+            .conn
+            .lock()
+            .unwrap()
+            .execute_batch("INSERT INTO preferences VALUES ('assistant_name', 'Nova');")
+            .unwrap();
+        assert_eq!(store.load().unwrap().assistant_name, "VoCare");
+    }
+
+    #[test]
     fn names_are_tidied_and_restricted() {
-        assert_eq!(normalise_name("  Nova ").unwrap(), "Nova");
+        assert_eq!(normalise_name("  VoCare ").unwrap(), "VoCare");
         assert_eq!(normalise_name("Mister   T").unwrap(), "Mister T");
         assert_eq!(normalise_name("Zoë").unwrap(), "Zoë");
         assert_eq!(normalise_name("O'Neil").unwrap(), "O'Neil");
@@ -287,8 +301,8 @@ mod tests {
             "Hey there my friend",
             "R2D2",
             "<script>",
-            "Nova!",
-            "-Nova",
+            "VoCare!",
+            "-VoCare",
             &"a".repeat(21),
         ] {
             assert!(normalise_name(bad).is_err(), "{bad}");
