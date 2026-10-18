@@ -121,12 +121,18 @@ impl Gemini {
             .send()
             .await
             .map_err(|e| {
-                eprintln!("gemini request failed: {}", e.without_url());
+                crate::diag::log(
+                    "gemini",
+                    format!("gemini request failed: {}", e.without_url()),
+                );
                 ModelError::Network
             })?;
         let status = resp.status();
         if !status.is_success() {
-            eprintln!("gemini ({model}) returned HTTP {}", status.as_u16());
+            crate::diag::log(
+                "gemini",
+                format!("gemini ({model}) returned HTTP {}", status.as_u16()),
+            );
             return Err(match status.as_u16() {
                 401 | 403 => ModelError::Auth,
                 400 if is_key_problem(resp).await => ModelError::Auth,
@@ -178,7 +184,10 @@ where
             Err(ModelError::Overloaded | ModelError::RateLimited)
         )
     {
-        eprintln!("gemini: {current} unavailable, trying {FALLBACK_MODEL}");
+        crate::diag::log(
+            "gemini",
+            format!("gemini: {current} unavailable, trying {FALLBACK_MODEL}"),
+        );
         return (attempt(FALLBACK_MODEL).await, FALLBACK_MODEL);
     }
     (result, current)
@@ -225,7 +234,10 @@ async fn is_key_problem(resp: reqwest::Response) -> bool {
 
 pub fn parse_interaction(body: &Value) -> Result<ModelTurn, ModelError> {
     if body["status"] == "failed" {
-        eprintln!("gemini interaction failed: {}", body["errors"]);
+        crate::diag::log(
+            "gemini",
+            format!("gemini interaction failed: {}", body["errors"]),
+        );
         return Err(ModelError::BadResponse);
     }
     let mut turn = ModelTurn::default();
@@ -303,7 +315,10 @@ pub async fn test_key(http: &reqwest::Client, key: &str) -> Result<(), String> {
         .send()
         .await
         .map_err(|e| {
-            eprintln!("gemini key test failed: {}", e.without_url());
+            crate::diag::log(
+                "gemini",
+                format!("gemini key test failed: {}", e.without_url()),
+            );
             "I couldn't reach Google. Please check the internet connection.".to_string()
         })?;
     match resp.status().as_u16() {

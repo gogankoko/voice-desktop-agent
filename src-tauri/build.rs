@@ -16,6 +16,9 @@ fn main() {
         "run_agent",
         "cancel_agent",
         "confirm_agent",
+        "get_diagnostics",
+        "clear_diagnostics",
+        "log_frontend_error",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("failed to run tauri-build");

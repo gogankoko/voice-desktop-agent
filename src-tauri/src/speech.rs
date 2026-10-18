@@ -113,7 +113,10 @@ async fn fetch_token(
         .send()
         .await
         .map_err(|e| {
-            eprintln!("speech token request failed: {}", e.without_url());
+            crate::diag::log(
+                "speech",
+                format!("speech token request failed: {}", e.without_url()),
+            );
             "I couldn't reach Microsoft's speech service. Please check the internet connection."
                 .to_string()
         })?;
@@ -140,7 +143,7 @@ async fn fetch_token(
 
 fn load_credential() -> Result<Option<AzureSpeechCredential>, String> {
     secrets::load_azure_speech().map_err(|e| {
-        eprintln!("credential read failed: {e}");
+        crate::diag::log("speech", format!("credential read failed: {e}"));
         "I couldn't read the saved speech settings.".to_string()
     })
 }
@@ -166,7 +169,7 @@ pub async fn save(state: &SpeechState, region: &str, key: &str) -> Result<Speech
     };
     let token = fetch_token(&state.client, &cred).await?;
     secrets::save_azure_speech(&cred).map_err(|e| {
-        eprintln!("credential write failed: {e}");
+        crate::diag::log("speech", format!("credential write failed: {e}"));
         "The key works, but Windows couldn't store it safely.".to_string()
     })?;
     *state.cache.lock().expect("token cache poisoned") = Some(CachedToken {
@@ -183,7 +186,7 @@ pub async fn save(state: &SpeechState, region: &str, key: &str) -> Result<Speech
 pub fn clear(state: &SpeechState) -> Result<SpeechSetup, String> {
     state.clear_cache();
     secrets::delete_azure_speech().map_err(|e| {
-        eprintln!("credential delete failed: {e}");
+        crate::diag::log("speech", format!("credential delete failed: {e}"));
         "I couldn't remove the saved speech key.".to_string()
     })?;
     Ok(SpeechSetup {

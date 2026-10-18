@@ -4,6 +4,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::agent::gemini::ChatModel as _;
 use crate::agent::{AgentOutcome, AgentState, DesktopExecutor, gemini};
 
 use crate::prefs::{Preferences, PrefsStore};
@@ -22,7 +23,7 @@ pub fn get_app_status() -> AppStatus {
 #[tauri::command]
 pub fn get_preferences(store: State<'_, PrefsStore>) -> Result<Preferences, String> {
     store.load().map_err(|e| {
-        eprintln!("get_preferences failed: {e}");
+        crate::diag::log("command", format!("get_preferences failed: {e}"));
         "Your settings couldn't be loaded, so the defaults are being used.".to_string()
     })
 }
@@ -35,7 +36,7 @@ pub fn set_preferences(
     prefs: Preferences,
 ) -> Result<Preferences, String> {
     store.save(&prefs).map_err(|e| {
-        eprintln!("set_preferences failed: {e}");
+        crate::diag::log("command", format!("set_preferences failed: {e}"));
         "Your settings couldn't be saved.".to_string()
     })?;
     Ok(prefs)
@@ -48,7 +49,7 @@ pub async fn open_application(app: AllowedApp) -> Result<OpenResult, String> {
     tauri::async_runtime::spawn_blocking(move || open_app::open(app))
         .await
         .map_err(|e| {
-            eprintln!("open_application task failed: {e}");
+            crate::diag::log("command", format!("open_application task failed: {e}"));
             "Something went wrong while opening the app.".to_string()
         })?
 }
@@ -107,7 +108,7 @@ pub async fn save_gemini_key(
     let key = gemini::normalise_key(&key)?;
     gemini::test_key(&state.http, &key).await?;
     secrets::save_gemini_key(&key).map_err(|e| {
-        eprintln!("gemini key write failed: {e}");
+        crate::diag::log("command", format!("gemini key write failed: {e}"));
         "The key works, but Windows couldn't store it safely.".to_string()
     })?;
     Ok(assistant_setup())
@@ -116,7 +117,7 @@ pub async fn save_gemini_key(
 #[tauri::command]
 pub fn clear_gemini_key() -> Result<AssistantSetup, String> {
     secrets::delete_gemini_key().map_err(|e| {
-        eprintln!("gemini key delete failed: {e}");
+        crate::diag::log("command", format!("gemini key delete failed: {e}"));
         "I couldn't remove the assistant key.".to_string()
     })?;
     Ok(assistant_setup())
@@ -142,7 +143,8 @@ pub async fn run_agent(
 ) -> Result<AgentOutcome, String> {
     let practice = prefs.load().map(|p| p.practice_mode).unwrap_or(false);
     let model = gemini::Gemini::new(state.http.clone(), gemini_key()?, practice);
-    state
+    let started = std::time::Instant::now();
+    let result = state
         .run(
             &model,
             &DesktopExecutor,
@@ -150,7 +152,9 @@ pub async fn run_agent(
             practice,
             progress(&app, task_id),
         )
-        .await
+        .await;
+    log_outcome("request", &result, started, model.model_id());
+    result
 }
 
 /// The user's explicit answer to a confirmation question. Only the matching, unexpired
@@ -167,7 +171,16 @@ pub async fn confirm_agent(
         .paused_info(&confirmation_id)
         .ok_or_else(|| "That question was already answered or has been cancelled.".to_string())?;
     let model = gemini::Gemini::resume(state.http.clone(), gemini_key()?, practice, model_id);
-    state
+    crate::diag::log(
+        "confirm",
+        if approved {
+            "user approved"
+        } else {
+            "user declined"
+        },
+    );
+    let started = std::time::Instant::now();
+    let result = state
         .confirm(
             &model,
             &DesktopExecutor,
@@ -175,7 +188,66 @@ pub async fn confirm_agent(
             approved,
             progress(&app, task_id),
         )
-        .await
+        .await;
+    log_outcome("confirm", &result, started, model.model_id());
+    result
+}
+
+/// One technical summary line per request: which tools ran and how, never any text.
+fn log_outcome(
+    kind: &str,
+    result: &Result<AgentOutcome, String>,
+    started: std::time::Instant,
+    model: &str,
+) {
+    let ms = started.elapsed().as_millis();
+    let line = match result {
+        Ok(o) => {
+            let actions: Vec<String> = o
+                .actions
+                .iter()
+                .map(|a| {
+                    format!(
+                        "{}:{}",
+                        a.tool,
+                        if !a.ok {
+                            "failed"
+                        } else if a.verified {
+                            "verified"
+                        } else {
+                            "unverified"
+                        }
+                    )
+                })
+                .collect();
+            format!(
+                "{kind} done in {ms}ms model={model} actions=[{}] confirmation={} cancelled={}",
+                actions.join(","),
+                o.confirmation.is_some(),
+                o.cancelled
+            )
+        }
+        Err(e) => format!("{kind} failed in {ms}ms model={model}: {e}"),
+    };
+    crate::diag::log("agent", line);
+}
+
+/// Recent technical log lines for the Help screen (already redacted).
+#[tauri::command]
+pub fn get_diagnostics() -> String {
+    crate::diag::recent(200)
+}
+
+#[tauri::command]
+pub fn clear_diagnostics() {
+    crate::diag::clear();
+}
+
+/// Lets the UI record its own errors. Length-limited and redacted like everything else.
+#[tauri::command]
+pub fn log_frontend_error(message: String) {
+    let message: String = message.chars().take(1000).collect();
+    crate::diag::log("ui", message);
 }
 
 fn gemini_key() -> Result<String, String> {
