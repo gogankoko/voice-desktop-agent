@@ -55,7 +55,7 @@ const AVAILABILITY_TEXT: Record<Availability, string> = {
   not_implemented: "Not available yet",
   needs_setup: "Needs setting up (see below)",
   mock: "Practice mode (pretend only)",
-  limited: "Opening your browser and websites, reading pages, following links",
+  limited: "Using your web browser: websites, reading, links, searching, buttons",
   available: "Available",
 };
 
@@ -294,8 +294,7 @@ export default function App() {
       </header>
 
       <div className="notice" role="note">
-        <strong>Early test version.</strong> You can talk to me in your own words. So far I can open
-        your web browser and websites, read a page to you, scroll, and follow links.
+        <strong>Early test version.</strong> You can talk to me in your own words. So far I can work in your web browser: open websites, read pages to you, follow links, search, fill in ordinary boxes and press buttons.
       </div>
       {prefs.practiceMode && (
         <div className="practice-banner" role="note">

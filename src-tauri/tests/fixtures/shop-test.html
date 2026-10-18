@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pretend Grocery Shop</title>
+  <style>
+    body { font-family: sans-serif; font-size: 20px; max-width: 40em; margin: 2em auto; }
+    li { margin: 0.5em 0; }
+    button, input { font-size: 1em; padding: 0.3em 0.6em; }
+  </style>
+</head>
+<body>
+  <h1>Pretend Grocery Shop</h1>
+  <p>This is a test page for the Voice Desktop Agent. It is stored on this computer. Nothing here is real: no money, no orders, no deliveries.</p>
+
+  <form id="search" onsubmit="return false">
+    <label for="q">Search products</label>
+    <input id="q" type="search" autocomplete="off">
+    <button type="button" onclick="search()">Search</button>
+  </form>
+  <p id="results-note" aria-live="polite">Showing all products.</p>
+
+  <ul id="products">
+    <li data-name="milk">Semi-skimmed milk, 2 pints, £1.45 <button type="button" onclick="add('milk')">Add milk to basket</button></li>
+    <li data-name="bread">Wholemeal bread, £1.10 <button type="button" onclick="add('bread')">Add bread to basket</button></li>
+    <li data-name="eggs">Free-range eggs, 6, £2.20 <button type="button" onclick="add('eggs')">Add eggs to basket</button></li>
+    <li data-name="butter">Butter, 250g, £2.00 <button type="button" onclick="add('butter')">Add butter to basket</button></li>
+  </ul>
+
+  <p id="basket" aria-live="polite">Basket: empty</p>
+  <button type="button" onclick="document.getElementById('pay').hidden = false">Checkout</button>
+
+  <section id="pay" hidden>
+    <h2>Pretend payment</h2>
+    <label for="card">Card number</label>
+    <input id="card" autocomplete="off" inputmode="numeric">
+    <label for="pw">Password</label>
+    <input id="pw" type="password">
+    <button type="button" onclick="document.getElementById('paid').hidden = false">Pay now</button>
+    <p id="paid" hidden>Pretend payment page reached. Nothing was paid.</p>
+  </section>
+
+  <script>
+    const basket = [];
+    function add(item) {
+      basket.push(item);
+      document.getElementById('basket').textContent = 'Basket: ' + basket.join(', ') + ' (' + basket.length + ' items)';
+    }
+    function search() {
+      const q = document.getElementById('q').value.trim().toLowerCase();
+      let shown = 0;
+      for (const li of document.querySelectorAll('#products li')) {
+        const match = !q || li.dataset.name.includes(q);
+        li.hidden = !match;
+        if (match) shown++;
+      }
+      document.getElementById('results-note').textContent = q
+        ? 'Results for "' + q + '": ' + shown + ' product(s).'
+        : 'Showing all products.';
+    }
+  </script>
+</body>
+</html>

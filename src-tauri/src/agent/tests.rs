@@ -60,6 +60,8 @@ struct FakeDesktop {
     sites: Mutex<Vec<String>>,
     scrolls: AtomicUsize,
     followed: Mutex<Vec<String>>,
+    pressed: Mutex<Vec<String>>,
+    typed: Mutex<Vec<(String, String)>>,
 }
 
 const PAGE_LINKS: [&str; 3] = ["Go to the second page", "Delete my account", "News"];
@@ -106,6 +108,42 @@ impl ToolExecutor for FakeDesktop {
                 page_address: Some("https://example.org/".into()),
             })
             .collect())
+    }
+    async fn list_controls(&self) -> Result<Vec<ControlRef>, String> {
+        let c = |kind, label: &str, sensitive| ControlRef {
+            kind,
+            label: label.into(),
+            ordinal: 0,
+            page_address: Some("https://shop.example/".into()),
+            sensitive,
+            value: if kind == ControlKind::TextField && !sensitive {
+                Some(String::new())
+            } else {
+                None
+            },
+        };
+        Ok(vec![
+            c(ControlKind::TextField, "Search products", false),
+            c(ControlKind::Button, "Search", false),
+            c(ControlKind::Button, "Add milk to basket", false),
+            c(ControlKind::Button, "Checkout", false),
+            c(ControlKind::TextField, "Card number", true),
+        ])
+    }
+    async fn press_button(&self, c: ControlRef) -> Result<PressResult, String> {
+        self.pressed.lock().unwrap().push(c.label);
+        Ok(PressResult {
+            address_changed: false,
+            address: Some("https://shop.example/".into()),
+        })
+    }
+    async fn type_text(&self, c: ControlRef, text: String) -> Result<TypeResult, String> {
+        assert!(
+            !c.sensitive,
+            "the fake desktop must never be asked to type into a sensitive box"
+        );
+        self.typed.lock().unwrap().push((c.label, text));
+        Ok(TypeResult { verified: true })
     }
     async fn follow_link(&self, link: LinkRef) -> Result<NavigationResult, String> {
         self.followed.lock().unwrap().push(link.text);
@@ -918,4 +956,121 @@ fn live_date_awareness() {
         }
         other => panic!("unexpected: {:?}", other.err()),
     }
+}
+
+// ---- Forms and buttons ----
+
+fn shop_turns(second: Vec<(&'static str, &'static str, Value)>, reply: &str) -> ScriptedModel {
+    ScriptedModel::new(vec![
+        Ok(call_turn(&[("c0", "list_page_controls", json!({}))])),
+        Ok(call_turn(&second)),
+        Ok(text_turn(reply)),
+    ])
+}
+
+#[test]
+fn search_on_a_site_types_then_presses() {
+    let model = shop_turns(
+        vec![
+            ("t1", "type_text", json!({"number": 1, "text": "milk"})),
+            ("p2", "press_button", json!({"number": 2})),
+        ],
+        "I searched for milk.",
+    );
+    let desk = FakeDesktop::default();
+    let out = finished(drive(&model, &desk, false));
+    assert_eq!(
+        *desk.typed.lock().unwrap(),
+        vec![("Search products".to_string(), "milk".to_string())]
+    );
+    assert_eq!(*desk.pressed.lock().unwrap(), vec!["Search".to_string()]);
+    assert!(
+        out.actions
+            .iter()
+            .any(|a| a.summary.contains("Typed \u{201c}milk\u{201d}"))
+    );
+}
+
+#[test]
+fn controls_need_a_fresh_list_and_the_right_kind() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[(
+            "t0",
+            "type_text",
+            json!({"number": 1, "text": "milk"}),
+        )])), // no list yet
+        Ok(call_turn(&[("c0", "list_page_controls", json!({}))])),
+        Ok(call_turn(&[
+            ("t2", "type_text", json!({"number": 2, "text": "milk"})), // 2 is a button
+            ("p1", "press_button", json!({"number": 1})),              // 1 is a text box
+            ("p9", "press_button", json!({"number": 9})),              // doesn't exist
+        ])),
+        Ok(text_turn("Sorry.")),
+    ]);
+    let desk = FakeDesktop::default();
+    finished(drive(&model, &desk, false));
+    assert!(desk.typed.lock().unwrap().is_empty());
+    assert!(desk.pressed.lock().unwrap().is_empty());
+}
+
+#[test]
+fn never_types_into_password_or_payment_boxes() {
+    let model = shop_turns(
+        vec![(
+            "t5",
+            "type_text",
+            json!({"number": 5, "text": "4111111111111111"}),
+        )],
+        "Please type that yourself.",
+    );
+    let desk = FakeDesktop::default();
+    let out = finished(drive(&model, &desk, false));
+    assert!(desk.typed.lock().unwrap().is_empty());
+    let err = results(&model).last().unwrap()["result"]["error"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(err.contains("password or payment"), "{err}");
+    assert!(out.actions.iter().all(|a| a.tool != "type_text"));
+}
+
+#[test]
+fn sensitive_boxes_are_listed_without_their_contents() {
+    let model = shop_turns(vec![], "ok");
+    let desk = FakeDesktop::default();
+    let _ = drive(&model, &desk, false);
+    let first = model.seen.lock().unwrap()[1].clone();
+    let listed = first
+        .iter()
+        .find(|s| s["type"] == "function_result")
+        .unwrap();
+    let card = &listed["result"]["controls"][4];
+    assert_eq!(card["label"], "Card number");
+    assert!(card.get("current_text").is_none());
+}
+
+#[test]
+fn adding_to_basket_runs_but_checkout_asks_first() {
+    let state = AgentState::new();
+    let model = shop_turns(
+        vec![
+            ("p3", "press_button", json!({"number": 3})),
+            ("p4", "press_button", json!({"number": 4})),
+        ],
+        "Done.",
+    );
+    let desk = FakeDesktop::default();
+    let out = block_on(state.run(&model, &desk, "add milk and check out", false, |_| {})).unwrap();
+    assert_eq!(
+        *desk.pressed.lock().unwrap(),
+        vec!["Add milk to basket".to_string()]
+    );
+    let c = out.confirmation.expect("checkout must ask first");
+    assert_eq!(c.text.details[0].value, "Checkout");
+    block_on(state.confirm(&model, &desk, &c.id, false, |_| {})).unwrap();
+    assert_eq!(
+        *desk.pressed.lock().unwrap(),
+        vec!["Add milk to basket".to_string()],
+        "declined: checkout not pressed"
+    );
 }

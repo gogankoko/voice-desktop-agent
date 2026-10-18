@@ -20,12 +20,18 @@ use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationCondition, IUIAutomationElement,
     IUIAutomationInvokePattern, IUIAutomationScrollPattern, IUIAutomationTextPattern,
     IUIAutomationValuePattern, ScrollAmount_LargeDecrement, ScrollAmount_LargeIncrement,
-    ScrollAmount_NoAmount, TreeScope_Descendants, UIA_CONTROLTYPE_ID, UIA_ControlTypePropertyId,
-    UIA_DocumentControlTypeId, UIA_EditControlTypeId, UIA_HyperlinkControlTypeId,
-    UIA_InvokePatternId, UIA_ScrollPatternId, UIA_TextPatternId, UIA_ValuePatternId,
+    ScrollAmount_NoAmount, TreeScope_Descendants, UIA_ButtonControlTypeId, UIA_CONTROLTYPE_ID,
+    UIA_ControlTypePropertyId, UIA_DocumentControlTypeId, UIA_EditControlTypeId,
+    UIA_HyperlinkControlTypeId, UIA_InvokePatternId, UIA_ScrollPatternId, UIA_TextPatternId,
+    UIA_ValuePatternId,
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP,
+    KEYEVENTF_UNICODE, SendInput, VIRTUAL_KEY, VK_CONTROL,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextLengthW, GetWindowThreadProcessId, IsWindowVisible,
+    EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowThreadProcessId,
+    IsWindowVisible, SetForegroundWindow,
 };
 use windows::core::BOOL;
 
@@ -34,6 +40,30 @@ use super::win::process_image_path;
 
 const MAX_PAGE_CHARS: usize = 6000;
 const MAX_LINKS: usize = 40;
+const MAX_CONTROLS: usize = 60;
+
+/// Field labels the assistant must never type into, whatever it is asked.
+const SENSITIVE_FIELD_WORDS: &[&str] = &[
+    "password",
+    "passcode",
+    "pin",
+    "card",
+    "card number",
+    "cvv",
+    "cvc",
+    "security code",
+    "expiry",
+    "expiration",
+    "iban",
+    "sort code",
+    "account number",
+    "routing",
+    "ssn",
+    "social security",
+    "one-time code",
+    "otp",
+    "verification code",
+];
 const NAVIGATION_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(300);
 
@@ -125,6 +155,7 @@ fn browser_window(exe: &Path) -> Option<HWND> {
 
 struct Browser {
     a: IUIAutomation,
+    hwnd: HWND,
     root: IUIAutomationElement,
 }
 
@@ -135,7 +166,7 @@ impl Browser {
         let a = automation()?;
         let hwnd = browser_window(exe).ok_or_else(|| NO_BROWSER.to_string())?;
         let root = unsafe { a.ElementFromHandle(hwnd) }.map_err(|_| NO_BROWSER.to_string())?;
-        Ok(Self { a, root })
+        Ok(Self { a, hwnd, root })
     }
 
     /// The web page itself (Chromium-based browsers and Firefox expose it as a Document).
@@ -367,6 +398,265 @@ pub fn follow_link(exe: &Path, link: &LinkRef) -> Result<NavigationResult, Strin
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ControlKind {
+    Button,
+    TextField,
+}
+
+/// A button or text box as observed; enough to find it again and check nothing changed.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ControlRef {
+    pub kind: ControlKind,
+    pub label: String,
+    /// Which control of this kind with this exact label (0 = first), in page order.
+    pub ordinal: usize,
+    pub page_address: Option<String>,
+    /// Password or payment-like field: never typed into, value never reported.
+    pub sensitive: bool,
+    /// Current text of a (non-sensitive) text box.
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PressResult {
+    /// The page address changed after pressing (many buttons legitimately don't change it).
+    pub address_changed: bool,
+    pub address: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeResult {
+    /// The box now contains exactly the requested text.
+    pub verified: bool,
+}
+
+/// Deterministic: is this a field the assistant must never type into?
+pub fn is_sensitive_label(label: &str) -> bool {
+    let t = label
+        .to_lowercase()
+        .replace(|c: char| !c.is_alphanumeric() && c != '-', " ");
+    let padded = format!(" {} ", t.split_whitespace().collect::<Vec<_>>().join(" "));
+    SENSITIVE_FIELD_WORDS
+        .iter()
+        .any(|w| padded.contains(&format!(" {w} ")))
+}
+
+fn is_password(e: &IUIAutomationElement) -> bool {
+    unsafe { e.CurrentIsPassword() }
+        .map(|b| b.as_bool())
+        .unwrap_or(true)
+}
+
+fn value_of(e: &IUIAutomationElement) -> Option<String> {
+    let v =
+        unsafe { e.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) }.ok()?;
+    unsafe { v.CurrentValue() }.ok().map(|b| b.to_string())
+}
+
+impl Browser {
+    /// Buttons and text boxes on the page, in page order.
+    fn controls(&self) -> Result<Vec<(ControlKind, IUIAutomationElement)>, String> {
+        let doc = self.document()?;
+        let buttons = control_type(&self.a, UIA_ButtonControlTypeId)?;
+        let edits = control_type(&self.a, UIA_EditControlTypeId)?;
+        let either = unsafe { self.a.CreateOrCondition(&buttons, &edits) }
+            .map_err(|_| "Couldn't search the page.".to_string())?;
+        let all = unsafe { doc.FindAll(TreeScope_Descendants, &either) }
+            .map_err(|_| "I couldn't look for buttons and boxes on this page.".to_string())?;
+        let n = unsafe { all.Length() }.unwrap_or(0);
+        Ok((0..n)
+            .filter_map(|i| unsafe { all.GetElement(i) }.ok())
+            .filter_map(|e| {
+                let kind = match unsafe { e.CurrentControlType() }.ok()? {
+                    t if t == UIA_ButtonControlTypeId => ControlKind::Button,
+                    _ => ControlKind::TextField,
+                };
+                Some((kind, e))
+            })
+            .collect())
+    }
+
+    /// Re-finds an observed control: same page, same kind, same label and position.
+    fn find_control(&self, c: &ControlRef) -> Result<IUIAutomationElement, String> {
+        if self.address() != c.page_address {
+            return Err("The page has changed since I looked at it, so I didn't touch anything. Ask me to look at the page again.".into());
+        }
+        self.controls()?
+            .into_iter()
+            .filter(|(k, e)| *k == c.kind && name_of(e) == c.label)
+            .nth(c.ordinal)
+            .map(|(_, e)| e)
+            .ok_or_else(|| {
+                "That isn't on the page any more, so I didn't touch anything.".to_string()
+            })
+    }
+}
+
+/// Buttons and text boxes on the current page.
+pub fn list_controls(exe: &Path) -> Result<Vec<ControlRef>, String> {
+    let b = Browser::find(exe)?;
+    let page_address = b.address();
+    let mut seen: std::collections::HashMap<(ControlKind, String), usize> =
+        std::collections::HashMap::new();
+    let mut out = Vec::new();
+    for (kind, e) in b.controls()? {
+        let label = name_of(&e);
+        if label.is_empty() {
+            continue;
+        }
+        let ordinal = *seen
+            .entry((kind, label.clone()))
+            .and_modify(|n| *n += 1)
+            .or_insert(0);
+        let sensitive =
+            kind == ControlKind::TextField && (is_password(&e) || is_sensitive_label(&label));
+        let value = if kind == ControlKind::TextField && !sensitive {
+            value_of(&e)
+        } else {
+            None
+        };
+        out.push(ControlRef {
+            kind,
+            label,
+            ordinal,
+            page_address: page_address.clone(),
+            sensitive,
+            value,
+        });
+        if out.len() >= MAX_CONTROLS {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+/// Presses an observed button (Invoke), after re-checking it is the same button on the same page.
+pub fn press_button(exe: &Path, c: &ControlRef) -> Result<PressResult, String> {
+    if c.kind != ControlKind::Button {
+        return Err("That's a text box, not a button.".into());
+    }
+    let b = Browser::find(exe)?;
+    let before = b.address();
+    let target = b.find_control(c)?;
+    let invoke =
+        unsafe { target.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId) }
+            .map_err(|_| "That button can't be pressed from here.".to_string())?;
+    unsafe { invoke.Invoke() }.map_err(|_| "Pressing that button didn't work.".to_string())?;
+    std::thread::sleep(Duration::from_millis(1200));
+    let after = Browser::find(exe).ok().and_then(|b| b.address());
+    Ok(PressResult {
+        address_changed: after.is_some() && after != before,
+        address: after,
+    })
+}
+
+fn key(vk: VIRTUAL_KEY, up: bool) -> INPUT {
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: if up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    KEYBD_EVENT_FLAGS(0)
+                },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+fn unicode(unit: u16, up: bool) -> INPUT {
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VIRTUAL_KEY(0),
+                wScan: unit,
+                dwFlags: if up {
+                    KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+                } else {
+                    KEYEVENTF_UNICODE
+                },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+/// Keystrokes that select the box's existing text and replace it with `text`.
+/// No Enter, Tab or other control keys are ever sent, so typing alone can't submit a form.
+fn replace_text_keystrokes(text: &str) -> Vec<INPUT> {
+    const VK_A: VIRTUAL_KEY = VIRTUAL_KEY(0x41);
+    let mut inputs = vec![
+        key(VK_CONTROL, false),
+        key(VK_A, false),
+        key(VK_A, true),
+        key(VK_CONTROL, true),
+    ];
+    for unit in text.encode_utf16() {
+        inputs.push(unicode(unit, false));
+        inputs.push(unicode(unit, true));
+    }
+    inputs
+}
+
+/// Types `text` into an observed text box, replacing what's there.
+///
+/// Safety: refuses sensitive fields; brings the browser to the front and focuses the box,
+/// then types only if the browser really is the foreground window AND that box has keyboard
+/// focus (otherwise keystrokes could land somewhere else). Reads the box back to verify.
+pub fn type_into_field(exe: &Path, c: &ControlRef, text: &str) -> Result<TypeResult, String> {
+    if c.kind != ControlKind::TextField {
+        return Err("That's a button, not a text box.".into());
+    }
+    if c.sensitive {
+        return Err("That box is for a password or payment details. For your safety I never type into those; please fill it in yourself.".into());
+    }
+    if text.chars().any(|ch| ch.is_control()) {
+        return Err("The text can't contain line breaks or special keys.".into());
+    }
+    let b = Browser::find(exe)?;
+    let field = b.find_control(c)?;
+    if is_password(&field) {
+        return Err("That box is for a password. For your safety I never type into those.".into());
+    }
+    unsafe {
+        let _ = SetForegroundWindow(b.hwnd);
+    }
+    std::thread::sleep(Duration::from_millis(250));
+    unsafe { field.SetFocus() }
+        .map_err(|_| "I couldn't put the cursor in that box.".to_string())?;
+    std::thread::sleep(Duration::from_millis(200));
+
+    let browser_in_front = unsafe { GetForegroundWindow() } == b.hwnd;
+    let field_focused = unsafe { field.CurrentHasKeyboardFocus() }
+        .map(|f| f.as_bool())
+        .unwrap_or(false);
+    if !browser_in_front || !field_focused {
+        return Err("I couldn't safely put the cursor in that box (another window may be in front), so I didn't type anything. Click on the browser window and ask me again.".into());
+    }
+
+    let inputs = replace_text_keystrokes(text);
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    if sent as usize != inputs.len() {
+        return Err(
+            "Windows blocked the typing, so the box may be only partly filled. Please check it."
+                .into(),
+        );
+    }
+    std::thread::sleep(Duration::from_millis(250));
+    let now = value_of(&field).unwrap_or_default();
+    Ok(TypeResult {
+        verified: now.trim() == text.trim(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,6 +674,49 @@ mod tests {
         assert!(!address_matches("example.com.evil.net", "example.com"));
         assert!(!address_matches("notexample.com", "example.com"));
         assert!(!address_matches("evil.net/?q=example.com", "example.com"));
+    }
+
+    #[test]
+    fn sensitive_field_labels() {
+        for l in [
+            "Password",
+            "Card number",
+            "CVV",
+            "Security code",
+            "Expiry date",
+            "PIN",
+            "Sort code",
+            "One-time code",
+        ] {
+            assert!(is_sensitive_label(l), "{l}");
+        }
+        for l in [
+            "Search products",
+            "Your name",
+            "Delivery address",
+            "Postcode",
+            "Email",
+            "Spinach",
+            "Discard",
+        ] {
+            assert!(!is_sensitive_label(l), "{l}");
+        }
+    }
+
+    #[test]
+    fn typing_never_sends_enter_or_tab() {
+        let inputs = replace_text_keystrokes("milk & eggs 🥚");
+        // Ctrl+A first (4 events), then only Unicode character events.
+        for i in &inputs[4..] {
+            let ki = unsafe { i.Anonymous.ki };
+            assert!(ki.dwFlags.contains(KEYEVENTF_UNICODE));
+            assert_eq!(ki.wVk, VIRTUAL_KEY(0));
+        }
+        // Emoji is a surrogate pair: 2 units, down+up each.
+        assert_eq!(
+            inputs.len(),
+            4 + 2 * "milk & eggs 🥚".encode_utf16().count()
+        );
     }
 
     #[test]
@@ -453,5 +786,78 @@ text:
         let stale = follow_link(&exe, second);
         println!("stale follow: {stale:?}");
         assert!(stale.is_err());
+    }
+
+    /// Live: the pretend shop. Lists controls, types into the search box, presses Search and
+    /// an Add button, and checks the card-number box is refused. Opens a browser tab and
+    /// briefly brings the browser to the front to type. Run:
+    /// cargo test --manifest-path src-tauri/Cargo.toml live_shop -- --ignored --nocapture --test-threads=1
+    #[test]
+    #[ignore = "opens the pretend shop in the real browser and types into it"]
+    fn live_shop_controls() {
+        let exe = super::super::win::default_browser_exe().expect("default browser");
+        Command::new(&exe)
+            .arg(fixture_url("shop-test.html"))
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + NAVIGATION_TIMEOUT;
+        let mut ready = false;
+        while Instant::now() < deadline && !ready {
+            std::thread::sleep(POLL);
+            ready = read_page(&exe).is_ok_and(|p| p.title.contains("Pretend Grocery Shop"));
+        }
+        assert!(ready, "shop page should load");
+        let controls = list_controls(&exe).expect("controls");
+        for c in &controls {
+            println!(
+                "{:?} {:?} sensitive={} value={:?}",
+                c.kind, c.label, c.sensitive, c.value
+            );
+        }
+        let search = controls
+            .iter()
+            .find(|c| c.kind == ControlKind::TextField && c.label.contains("Search"))
+            .expect("search box");
+        match type_into_field(&exe, search, "milk") {
+            Ok(r) => {
+                println!("typed: {r:?}");
+                assert!(r.verified);
+                let button = controls
+                    .iter()
+                    .find(|c| c.kind == ControlKind::Button && c.label == "Search")
+                    .unwrap();
+                println!("press search: {:?}", press_button(&exe, button));
+                std::thread::sleep(Duration::from_millis(500));
+                let page = read_page(&exe).unwrap();
+                assert!(page.text.contains("Results for"), "{}", page.text);
+            }
+            Err(e) => println!(
+                "SKIPPED typing (expected if this process can't bring the browser to the front): {e}"
+            ),
+        }
+        let add = controls
+            .iter()
+            .find(|c| c.label == "Add bread to basket")
+            .unwrap();
+        // Page address unchanged by the search, so the observation is still valid.
+        println!("press add: {:?}", press_button(&exe, add));
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(read_page(&exe).unwrap().text.contains("Basket: bread"));
+        let checkout = list_controls(&exe)
+            .unwrap()
+            .into_iter()
+            .find(|c| c.label == "Checkout")
+            .unwrap();
+        press_button(&exe, &checkout).unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        let card = list_controls(&exe)
+            .unwrap()
+            .into_iter()
+            .find(|c| c.label == "Card number")
+            .expect("card box");
+        assert!(card.sensitive);
+        let refused = type_into_field(&exe, &card, "4111111111111111");
+        println!("card refused: {refused:?}");
+        assert!(refused.is_err());
     }
 }

@@ -71,7 +71,11 @@
 - [x] Local test pages (`src-tauri/tests/fixtures/`), since example.com asks not to be relied on for testing
 - [x] Live (real Edge): open + verify, read, list, scroll, follow, stale link refused
 - [x] Live (real Gemini + real Edge): read the secret word **and ignored the page's planted "open evil.example" instruction**; followed the right link; risky link paused; declined = nothing clicked
-- [ ] Buttons, forms and typing into web pages (need `type_text` with the foreground check; next)
+- [x] Buttons and text boxes: `list_page_controls`, `type_text` (Medium), `press_button` (risk by label)
+- [x] Typing only after the browser is verified as the foreground window AND the box has keyboard focus; Unicode keystrokes, never Enter/Tab; value read back
+- [x] Password and payment-like boxes refused and never read (UIA IsPassword + label words)
+- [x] Consequential buttons (checkout, pay, place order, sign up, delete…) use the confirmation gate
+- [x] End-to-end (real app + Gemini + Edge, pretend shop `scripts/smoke-shop.ps1`): searched for milk (typing verified), added milk to the basket (page checked), checkout asked for confirmation, No pressed nothing
 - [ ] Reading a page aloud in full ("read me this article") with pause/continue
 
 ## Phase 8: Hardening (in progress)
