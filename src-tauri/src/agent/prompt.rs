@@ -51,6 +51,57 @@ for it first.
 - Nothing is ever really sent in practice mode. After it runs, tell the person it was only \
 practice.";
 
+/// Formats local time for the model, e.g. "Sunday 18 October 2026, 14:05".
+pub fn format_local_time(
+    year: u16,
+    month: u16,
+    day_of_week: u16,
+    day: u16,
+    hour: u16,
+    minute: u16,
+) -> String {
+    const DAYS: [&str; 7] = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    let dow = DAYS.get(day_of_week as usize).copied().unwrap_or("");
+    let mon = MONTHS
+        .get(month.saturating_sub(1) as usize)
+        .copied()
+        .unwrap_or("");
+    format!("{dow} {day} {mon} {year}, {hour:02}:{minute:02}")
+        .trim()
+        .to_string()
+}
+
+/// The model has no clock and otherwise assumes its training year. Sent with every request.
+pub fn date_line(now: &str) -> String {
+    format!(
+        "
+
+Current date and time (the person's computer, local time): {now}. Use it for anything          about today, dates, times or how recent something is. Your own knowledge may be older          than this date; if something may have changed since, say so rather than guessing."
+    )
+}
+
 pub fn system_instruction(practice: bool) -> String {
     if practice {
         format!("{SYSTEM_INSTRUCTION}{PRACTICE_ADDENDUM}")
@@ -62,6 +113,19 @@ pub fn system_instruction(practice: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_time_formatting() {
+        assert_eq!(
+            format_local_time(2026, 10, 0, 18, 14, 5),
+            "Sunday 18 October 2026, 14:05"
+        );
+        assert_eq!(
+            format_local_time(2027, 1, 5, 1, 9, 0),
+            "Friday 1 January 2027, 09:00"
+        );
+        assert!(date_line("Sunday 18 October 2026, 14:05").contains("18 October 2026"));
+    }
 
     #[test]
     fn practice_addendum_only_in_practice_mode() {

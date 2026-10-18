@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::prompt::system_instruction;
+use super::prompt::{date_line, system_instruction};
 use super::registry;
 
 /// Pinned rather than a `-latest` alias so behaviour doesn't change underneath us.
@@ -114,7 +114,10 @@ impl Gemini {
             .header("x-goog-api-key", &self.key)
             .timeout(REQUEST_TIMEOUT)
             .header("Content-Type", "application/json")
-            .body(request_body(model, input, self.practice).to_string())
+            .body(
+                request_body(model, input, self.practice, &crate::tools::win::local_now())
+                    .to_string(),
+            )
             .send()
             .await
             .map_err(|e| {
@@ -181,11 +184,11 @@ where
     (result, current)
 }
 
-pub fn request_body(model: &str, input: &[Value], practice: bool) -> Value {
+pub fn request_body(model: &str, input: &[Value], practice: bool, now: &str) -> Value {
     json!({
         "model": model,
         "input": input,
-        "system_instruction": system_instruction(practice),
+        "system_instruction": format!("{}{}", system_instruction(practice), date_line(now)),
         "tools": registry::declarations(practice),
         "store": false,
         "generation_config": {
@@ -378,6 +381,13 @@ mod tests {
             MODEL,
             &[json!({"type": "user_input", "content": [{"type": "text", "text": "hi"}]})],
             false,
+            "Sunday 18 October 2026, 14:05",
+        );
+        assert!(
+            body["system_instruction"]
+                .as_str()
+                .unwrap()
+                .contains("18 October 2026")
         );
         assert_eq!(body["store"], false);
         assert_eq!(body["model"], MODEL);
@@ -534,7 +544,7 @@ mod tests {
             .expect("a Gemini key is stored");
         let http = reqwest::Client::new();
         let user = json!([{"type": "user_input", "content": [{"type": "text", "text": "Say hello in five words."}]}]);
-        let full = request_body(MODEL, user.as_array().unwrap(), false);
+        let full = request_body(MODEL, user.as_array().unwrap(), false, "test");
         let mut variants: Vec<(&str, Value)> = vec![
             (
                 "minimal (model + string input)",
@@ -564,7 +574,7 @@ mod tests {
         variants.push(("full app request", full));
         variants.push((
             "full request on fallback model",
-            request_body(FALLBACK_MODEL, user.as_array().unwrap(), false),
+            request_body(FALLBACK_MODEL, user.as_array().unwrap(), false, "test"),
         ));
         tauri::async_runtime::block_on(async {
             for (label, body) in variants {
