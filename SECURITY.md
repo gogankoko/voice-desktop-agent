@@ -60,7 +60,7 @@ Arbitrary shell or PowerShell, running generated code, unrestricted JavaScript i
 - Raw audio, full screenshots, passwords, payment data and full transcripts are not stored by default.
 - Provider API keys go in Windows Credential Manager (`VoiceDesktopAgent/AzureSpeech`). Never in the frontend bundle, committed config, test fixtures or logs. Rust types holding keys or tokens redact them in `Debug` output. The frontend receives only short-lived tokens.
 - Microphone audio goes to Azure only while the mic button shows Listening. It is not recorded or stored. Silence or unclear speech is never treated as a request or as consent.
-- Logs are redacted for sensitive fields.
+- The local diagnostics log (`diag.rs`) records only technical events and redacts every line (keys, tokens, web addresses, emails, Windows user names) before writing; size-capped. See PRIVACY.md.
 - Mock modes are visibly labelled and never claim to have acted on the real computer.
 
 ## Input simulation

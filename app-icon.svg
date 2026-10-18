@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Voice Desktop Agent icon: microphone with sound waves. Source for `npx tauri icon app-icon.svg`. -->
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="#0b5cad"/>
+  <!-- microphone head -->
+  <rect x="402" y="190" width="220" height="400" rx="110" fill="#ffffff"/>
+  <!-- cradle -->
+  <path d="M312 470 a200 200 0 0 0 400 0" fill="none" stroke="#ffffff" stroke-width="56" stroke-linecap="round"/>
+  <!-- stand -->
+  <line x1="512" y1="672" x2="512" y2="790" stroke="#ffffff" stroke-width="56" stroke-linecap="round"/>
+  <line x1="400" y1="812" x2="624" y2="812" stroke="#ffffff" stroke-width="56" stroke-linecap="round"/>
+  <!-- sound waves -->
+  <path d="M232 340 q-60 130 0 260" fill="none" stroke="#ffbf47" stroke-width="44" stroke-linecap="round"/>
+  <path d="M792 340 q60 130 0 260" fill="none" stroke="#ffbf47" stroke-width="44" stroke-linecap="round"/>
+</svg>

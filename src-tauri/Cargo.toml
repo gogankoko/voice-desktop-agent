@@ -1,6 +1,6 @@
 [package]
 name = "voice-desktop-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Voice-first Windows desktop assistant"
 authors = ["gogankoko"]
 edition = "2024"
