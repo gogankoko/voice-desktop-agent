@@ -109,6 +109,12 @@ impl ToolExecutor for FakeDesktop {
             })
             .collect())
     }
+    async fn list_windows(&self) -> Result<Vec<crate::tools::win::WindowSummary>, String> {
+        Ok(vec![crate::tools::win::WindowSummary {
+            title: "Yeat - YouTube".into(),
+            app: "Microsoft Edge".into(),
+        }])
+    }
     async fn list_controls(&self) -> Result<Vec<ControlRef>, String> {
         let c = |kind, label: &str, sensitive| ControlRef {
             kind,
@@ -1073,4 +1079,17 @@ fn adding_to_basket_runs_but_checkout_asks_first() {
         vec!["Add milk to basket".to_string()],
         "declined: checkout not pressed"
     );
+}
+
+#[test]
+fn list_open_windows_reports_titles_and_apps() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[("w1", "list_open_windows", json!({}))])),
+        Ok(text_turn("You have YouTube open in Edge.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let out = finished(drive(&model, &desk, false));
+    let r = &results(&model)[0]["result"];
+    assert_eq!(r["windows_front_first"][0]["app"], "Microsoft Edge");
+    assert!(out.actions[0].summary.contains("open windows"));
 }

@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use windows::Win32::Foundation::{HWND, LPARAM};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
 };
@@ -30,13 +30,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     KEYEVENTF_UNICODE, SendInput, VIRTUAL_KEY, VK_CONTROL,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowThreadProcessId,
-    IsWindowVisible, SetForegroundWindow,
+    GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
 };
-use windows::core::BOOL;
 
 use super::web_url::SafeUrl;
-use super::win::process_image_path;
+use super::win::{process_image_path, top_level_windows};
 
 const MAX_PAGE_CHARS: usize = 6000;
 const MAX_LINKS: usize = 40;
@@ -122,22 +120,6 @@ fn control_type(
 ) -> Result<IUIAutomationCondition, String> {
     unsafe { a.CreatePropertyCondition(UIA_ControlTypePropertyId, &int_variant(ct.0)) }
         .map_err(|_| "Couldn't search the browser window.".to_string())
-}
-
-/// Visible top-level windows in z-order (front first).
-fn top_level_windows() -> Vec<HWND> {
-    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let list = unsafe { &mut *(lparam.0 as *mut Vec<HWND>) };
-        if unsafe { IsWindowVisible(hwnd) }.as_bool() && unsafe { GetWindowTextLengthW(hwnd) } > 0 {
-            list.push(hwnd);
-        }
-        true.into()
-    }
-    let mut list: Vec<HWND> = Vec::new();
-    unsafe {
-        let _ = EnumWindows(Some(collect), LPARAM(&mut list as *mut _ as isize));
-    }
-    list
 }
 
 fn same_exe(a: &Path, b: &Path) -> bool {
