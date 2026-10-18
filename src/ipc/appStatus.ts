@@ -11,6 +11,7 @@ export const appStatusSchema = z.object({
   speechSynthesis: availability,
   reasoningModel: availability,
   computerControl: availability,
+  talkShortcut: z.string().max(40).nullable(),
 });
 
 export type AppStatus = z.infer<typeof appStatusSchema>;

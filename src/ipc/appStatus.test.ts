@@ -8,6 +8,7 @@ const valid = {
   speechSynthesis: "not_implemented",
   reasoningModel: "not_implemented",
   computerControl: "not_implemented",
+    talkShortcut: "Ctrl+Alt+Space",
 };
 
 describe("appStatusSchema", () => {

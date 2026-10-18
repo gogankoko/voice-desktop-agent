@@ -79,6 +79,13 @@
 - `media_control` presses the keyboard's media keys (play/pause, next, previous, volume, mute). They go to Windows, never into the front window.
 - App window text (button labels, box contents up to 200 characters) is sent to Gemini only when the assistant lists that window's controls for a request.
 
+## Shortcut, reminders, windows, status (since 0.3)
+
+- The talk shortcut uses Windows' `RegisterHotKey` for one key combination only; the app never sees other keystrokes (no keyboard hook). It does exactly what pressing the microphone button does.
+- Reminders are kept in memory only, at most 20, up to 24 hours ahead; their text is limited to 120 characters on one line, never written to the log, and nothing is sent anywhere when one goes off.
+- `manage_window` acts on a window from the latest `list_open_windows` (or the front window behind the assistant), never on this app's own window. Closing is High risk (confirmation shows the window title) and only sends the normal close request, so programs still ask to save. Switching/minimizing/resizing are Low.
+- `computer_status` is read-only (battery, internet connectivity flag, free space on the system drive).
+
 ## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |

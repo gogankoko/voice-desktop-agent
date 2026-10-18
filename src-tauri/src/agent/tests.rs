@@ -6,11 +6,14 @@ use serde_json::{Value, json};
 
 use super::gemini::{ChatModel, ModelError, ModelTurn, ProposedCall};
 use super::*;
+use crate::reminders::{Reminder, ReminderTime, Reminders};
 use crate::tools::app_control::AppControl;
 use crate::tools::apps::{Launched, MediaAction};
 use crate::tools::browser::ZoomDirection;
 use crate::tools::files::{FileKind, FoundFile, When};
 use crate::tools::screen::{MagnifierAction, MagnifierResult, SettingsPage};
+use crate::tools::system_status::ComputerStatus;
+use crate::tools::window_ops::WindowAction;
 
 /// Replays scripted turns and records every input it was sent.
 struct ScriptedModel {
@@ -71,6 +74,8 @@ struct FakeDesktop {
     screen: Mutex<Vec<String>>,
     media: Mutex<Vec<MediaAction>>,
     app_windows_listed: Mutex<Vec<isize>>,
+    reminders: Reminders,
+    window_ops: Mutex<Vec<(isize, WindowAction)>>,
 }
 
 const PAGE_LINKS: [&str; 3] = ["Go to the second page", "Delete my account", "News"];
@@ -302,6 +307,34 @@ impl ToolExecutor for FakeDesktop {
         assert!(!c.sensitive);
         self.typed.lock().unwrap().push((c.label, text));
         Ok(TypeResult { verified: true })
+    }
+    async fn set_reminder(&self, when: ReminderTime, text: String) -> Result<Reminder, String> {
+        // The fake clock always says 14:00:00.
+        let (secs, clock) = crate::reminders::schedule(when, 14, 0, 0);
+        self.reminders
+            .add(text, secs, std::time::SystemTime::UNIX_EPOCH, clock)
+    }
+    async fn list_reminders(&self) -> Result<Vec<Reminder>, String> {
+        Ok(self.reminders.list())
+    }
+    async fn cancel_reminder(&self, id: u32) -> Result<Reminder, String> {
+        self.reminders
+            .cancel(id)
+            .ok_or_else(|| "no such reminder".into())
+    }
+    async fn manage_window(&self, hwnd: isize, action: WindowAction) -> Result<bool, String> {
+        self.window_ops.lock().unwrap().push((hwnd, action));
+        Ok(true)
+    }
+    async fn computer_status(&self) -> Result<ComputerStatus, String> {
+        Ok(ComputerStatus {
+            has_battery: true,
+            battery_percent: Some(64),
+            plugged_in: Some(false),
+            internet: Some(true),
+            disk_free_gb: Some(120.5),
+            disk_total_gb: Some(476.0),
+        })
     }
     async fn media_key(&self, action: MediaAction) -> Result<(), String> {
         self.media.lock().unwrap().push(action);
@@ -1853,4 +1886,129 @@ fn live_spotify_agent() {
     std::thread::sleep(std::time::Duration::from_secs(4));
     let b = ask("Pause the music");
     assert!(b.actions.iter().any(|x| x.tool == "media_control" && x.ok));
+}
+
+#[test]
+fn sets_lists_and_cancels_reminders() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    let out = ask_state(
+        &state,
+        &desk,
+        vec![
+            Ok(call_turn(&[(
+                "r1",
+                "set_reminder",
+                json!({"text": "take your pills", "in_minutes": 20}),
+            )])),
+            Ok(call_turn(&[(
+                "r2",
+                "set_reminder",
+                json!({"text": "call Anna", "at": "17:30"}),
+            )])),
+            Ok(text_turn("Done.")),
+        ],
+    );
+    assert!(
+        out.actions[0].summary.contains("14:20"),
+        "{:?}",
+        out.actions
+    );
+    assert!(out.actions[1].summary.contains("17:30"));
+    ask_state(
+        &state,
+        &desk,
+        vec![
+            Ok(call_turn(&[(
+                "c1",
+                "cancel_reminder",
+                json!({"number": 1}),
+            )])),
+            Ok(text_turn("Cancelled.")),
+        ],
+    );
+    let left = desk.reminders.list();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].text, "call Anna");
+}
+
+#[test]
+fn switches_to_a_listed_window_and_closing_asks_first() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[("w0", "list_open_windows", json!({}))])),
+        Ok(call_turn(&[(
+            "w1",
+            "manage_window",
+            json!({"action": "switch_to", "window": 2}),
+        )])),
+        Ok(call_turn(&[(
+            "w2",
+            "manage_window",
+            json!({"action": "close", "window": 2}),
+        )])),
+        Ok(text_turn("Done.")),
+    ]);
+    let out = block_on(state.run(
+        &model,
+        &desk,
+        "switch to youtube then close it",
+        false,
+        |_| {},
+    ))
+    .unwrap();
+    assert_eq!(
+        *desk.window_ops.lock().unwrap(),
+        vec![(2, WindowAction::SwitchTo)]
+    );
+    let c = out.confirmation.expect("closing asks first");
+    assert_eq!(c.text.action, "Close a window in Microsoft Edge");
+    assert_eq!(c.text.details[0].value, "Yeat - YouTube");
+}
+
+#[test]
+fn reports_computer_status() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[("s1", "computer_status", json!({}))])),
+        Ok(text_turn("64% battery.")),
+    ]);
+    let desk = FakeDesktop::default();
+    finished(drive(&model, &desk, false));
+    let r = &results(&model)[0];
+    assert_eq!(r["result"]["battery_percent"], 64);
+    assert_eq!(r["result"]["internet"], true);
+}
+
+/// Live: real Gemini + real computer for reminders and status (nothing visible; the reminder
+/// is set in this test process only and never fires). Run:
+/// cargo test --manifest-path src-tauri/Cargo.toml live_helpers_agent -- --ignored --nocapture --test-threads=1
+#[test]
+#[ignore = "real Gemini"]
+fn live_helpers_agent() {
+    let key = crate::secrets::load_gemini_key()
+        .unwrap()
+        .expect("a Gemini key is stored");
+    let state = AgentState::new();
+    let ask = |q: &str| {
+        let model = super::gemini::Gemini::new(reqwest::Client::new(), key.clone(), false);
+        let out = block_on(state.run(&model, &DesktopExecutor, q, false, |_| {}))
+            .unwrap_or_else(|e| panic!("{q}: {e}"));
+        println!(
+            "Q: {q}\n  actions: {:?}\n  reply: {}",
+            out.actions.iter().map(|a| &a.summary).collect::<Vec<_>>(),
+            out.reply,
+        );
+        out
+    };
+    let a = ask("Remind me in 30 minutes to drink some water");
+    assert!(a.actions.iter().any(|x| x.tool == "set_reminder" && x.ok));
+    let b = ask("How much battery do I have?");
+    assert!(
+        b.actions
+            .iter()
+            .any(|x| x.tool == "computer_status" && x.ok)
+    );
+    let c = ask("What reminders do I have?");
+    assert!(c.reply.to_lowercase().contains("water"), "{}", c.reply);
 }

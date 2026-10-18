@@ -16,6 +16,7 @@ const backend: Record<string, unknown> = {
     speechSynthesis: "available",
     reasoningModel: "needs_setup",
     computerControl: "limited",
+    talkShortcut: "Ctrl+Alt+Space",
   },
   get_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false },
   set_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false },

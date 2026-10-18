@@ -22,6 +22,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 
+use crate::reminders::{Reminder, ReminderTime};
 use crate::tools::Risk;
 use crate::tools::app_control::AppControl;
 use crate::tools::apps::{Launched, MediaAction};
@@ -32,7 +33,9 @@ use crate::tools::browser::{
 use crate::tools::files::{FileKind, FoundFile, When};
 use crate::tools::open_app::{AllowedApp, OpenResult};
 use crate::tools::screen::{MagnifierAction, MagnifierResult, SettingsPage};
+use crate::tools::system_status::ComputerStatus;
 use crate::tools::web_url::SafeUrl;
+use crate::tools::window_ops::WindowAction;
 use gemini::{ChatModel, ModelError, ProposedCall};
 use registry::{ConfirmationText, Refusal, ValidatedCall};
 
@@ -214,6 +217,20 @@ pub trait ToolExecutor {
         text: String,
     ) -> impl Future<Output = Result<TypeResult, String>> + Send;
     fn media_key(&self, action: MediaAction) -> impl Future<Output = Result<(), String>> + Send;
+    fn set_reminder(
+        &self,
+        when: ReminderTime,
+        text: String,
+    ) -> impl Future<Output = Result<Reminder, String>> + Send;
+    fn list_reminders(&self) -> impl Future<Output = Result<Vec<Reminder>, String>> + Send;
+    fn cancel_reminder(&self, id: u32) -> impl Future<Output = Result<Reminder, String>> + Send;
+    /// Whether the result could be confirmed.
+    fn manage_window(
+        &self,
+        hwnd: isize,
+        action: WindowAction,
+    ) -> impl Future<Output = Result<bool, String>> + Send;
+    fn computer_status(&self) -> impl Future<Output = Result<ComputerStatus, String>> + Send;
 }
 
 pub struct DesktopExecutor;
@@ -335,6 +352,25 @@ impl ToolExecutor for DesktopExecutor {
     }
     async fn media_key(&self, action: MediaAction) -> Result<(), String> {
         blocking(move || crate::tools::apps::media_key(action)).await
+    }
+    async fn set_reminder(&self, when: ReminderTime, text: String) -> Result<Reminder, String> {
+        let (h, m, sec) = crate::tools::win::local_hms();
+        let (secs, clock) = crate::reminders::schedule(when, h, m, sec);
+        crate::reminders::store().add(text, secs, std::time::SystemTime::now(), clock)
+    }
+    async fn list_reminders(&self) -> Result<Vec<Reminder>, String> {
+        Ok(crate::reminders::store().list())
+    }
+    async fn cancel_reminder(&self, id: u32) -> Result<Reminder, String> {
+        crate::reminders::store().cancel(id).ok_or_else(|| {
+            "There's no reminder with that number. It may have already gone off.".into()
+        })
+    }
+    async fn manage_window(&self, hwnd: isize, action: WindowAction) -> Result<bool, String> {
+        blocking(move || crate::tools::window_ops::apply(hwnd, action)).await
+    }
+    async fn computer_status(&self) -> Result<ComputerStatus, String> {
+        blocking(|| Ok(crate::tools::system_status::read())).await
     }
 }
 
@@ -707,6 +743,24 @@ impl TaskRun {
                     number,
                     label: c.label.clone(),
                     text,
+                })
+            }
+            ValidatedCall::ManageWindow {
+                action,
+                window: Some(n),
+                ..
+            } => {
+                let w = n
+                    .checked_sub(1)
+                    .and_then(|i| self.windows.get(i as usize))
+                    .ok_or_else(|| {
+                        Refusal("There's no window with that number in the latest list. Call list_open_windows first.".into())
+                    })?;
+                Ok(ValidatedCall::ManageWindow {
+                    action,
+                    window: Some(n),
+                    title: w.title.clone(),
+                    app: w.app.clone(),
                 })
             }
             ValidatedCall::PressAppButton { number, .. } => {
@@ -1564,6 +1618,154 @@ impl TaskRun {
                     function_result(call, json!({ "error": why }), true)
                 }
             },
+            ValidatedCall::SetReminder { text, .. } => {
+                match exec.set_reminder(v_when(&v), text.clone()).await {
+                    Ok(r) => {
+                        self.report(
+                            "set_reminder",
+                            true,
+                            true,
+                            format!(
+                                "Set reminder {} for {}: \u{201c}{}\u{201d}",
+                                r.id, r.due_clock, r.text
+                            ),
+                        );
+                        self.undo_log.push(UndoEntry::NotUndoable {
+                            what: format!("set reminder {}", r.id),
+                            why: "To remove a reminder, ask me to cancel it.".into(),
+                        });
+                        function_result(
+                            call,
+                            json!({
+                                "set": true,
+                                "number": r.id,
+                                "due_at_local_time": r.due_clock,
+                                "note": "It goes off with a chime and is spoken aloud, only while this app stays open."
+                            }),
+                            false,
+                        )
+                    }
+                    Err(why) => {
+                        self.report("set_reminder", false, false, why.clone());
+                        function_result(call, json!({ "error": why }), true)
+                    }
+                }
+            }
+            ValidatedCall::ListReminders => match exec.list_reminders().await {
+                Ok(list) => {
+                    self.report(
+                        "list_reminders",
+                        true,
+                        true,
+                        format!("Looked at the reminders ({} set)", list.len()),
+                    );
+                    let items: Vec<Value> = list
+                        .iter()
+                        .map(|r| json!({ "number": r.id, "text": r.text, "due_at_local_time": r.due_clock }))
+                        .collect();
+                    function_result(call, json!({ "reminders_soonest_first": items }), false)
+                }
+                Err(why) => {
+                    self.report("list_reminders", false, false, why.clone());
+                    function_result(call, json!({ "error": why }), true)
+                }
+            },
+            ValidatedCall::CancelReminder { number } => match exec.cancel_reminder(number).await {
+                Ok(r) => {
+                    self.report(
+                        "cancel_reminder",
+                        true,
+                        true,
+                        format!("Cancelled reminder {}: \u{201c}{}\u{201d}", r.id, r.text),
+                    );
+                    function_result(call, json!({ "cancelled": true, "text": r.text }), false)
+                }
+                Err(why) => {
+                    self.report("cancel_reminder", false, false, why.clone());
+                    function_result(call, json!({ "error": why }), true)
+                }
+            },
+            ValidatedCall::ManageWindow {
+                action,
+                window,
+                ref title,
+                ..
+            } => {
+                let target = match window {
+                    Some(n) => self.windows.get((n - 1) as usize).cloned(), // checked in resolve
+                    None => exec
+                        .list_windows()
+                        .await
+                        .ok()
+                        .and_then(|ws| ws.into_iter().next()),
+                };
+                let Some(w) = target else {
+                    return function_result(
+                        call,
+                        json!({ "error": "I couldn't find a window to do that to." }),
+                        true,
+                    );
+                };
+                let shown = if title.is_empty() {
+                    w.title.clone()
+                } else {
+                    title.clone()
+                };
+                match exec.manage_window(w.hwnd, action).await {
+                    Ok(confirmed) => {
+                        let summary = match (action, confirmed) {
+                            (WindowAction::Close, false) => format!(
+                                "Asked \u{201c}{shown}\u{201d} to close, but it's still open (it may be asking to save)"
+                            ),
+                            (_, true) => {
+                                format!("{} \u{201c}{shown}\u{201d} (checked)", action.verb())
+                            }
+                            (_, false) => format!(
+                                "{} \u{201c}{shown}\u{201d}, but couldn't confirm it",
+                                action.verb()
+                            ),
+                        };
+                        self.report("manage_window", true, confirmed, summary);
+                        if action == WindowAction::Close {
+                            self.undo_log.push(UndoEntry::NotUndoable {
+                                what: format!("closed \u{201c}{shown}\u{201d}"),
+                                why: "I can't reopen a closed window. You can open the program again.".into(),
+                            });
+                            self.windows.clear();
+                        }
+                        function_result(
+                            call,
+                            json!({
+                                "window": shown,
+                                "done": confirmed,
+                                "note": if action == WindowAction::Close && !confirmed {
+                                    "Still open: it may be showing a 'Save?' question. Use read_window to see it, and let the person decide."
+                                } else { "" }
+                            }),
+                            false,
+                        )
+                    }
+                    Err(why) => {
+                        self.report("manage_window", false, false, why.clone());
+                        function_result(call, json!({ "error": why }), true)
+                    }
+                }
+            }
+            ValidatedCall::ComputerStatus => match exec.computer_status().await {
+                Ok(st) => {
+                    self.report(
+                        "computer_status",
+                        true,
+                        true,
+                        "Checked the battery, internet and disk".into(),
+                    );
+                    function_result(call, json!(st), false)
+                }
+                Err(why) => {
+                    self.report("computer_status", false, false, why.clone());
+                    function_result(call, json!({ "error": why }), true)
+                }
+            },
             ValidatedCall::PracticeSendMessage { to, .. } => {
                 self.undo_log.push(UndoEntry::NotUndoable {
                     what: "the practice message".into(),
@@ -1589,6 +1791,13 @@ impl TaskRun {
                 )
             }
         }
+    }
+}
+
+fn v_when(v: &ValidatedCall) -> ReminderTime {
+    match v {
+        ValidatedCall::SetReminder { when, .. } => *when,
+        _ => unreachable!("only called for SetReminder"),
     }
 }
 

@@ -1,7 +1,9 @@
 mod agent;
 mod commands;
 mod diag;
+mod hotkey;
 mod prefs;
+mod reminders;
 mod secrets;
 mod speech;
 mod status;
@@ -29,6 +31,8 @@ pub fn run() {
             app.manage(prefs::PrefsStore::open(&dir.join("voice-agent.db"))?);
             app.manage(speech::SpeechState::new());
             app.manage(agent::AgentState::new());
+            hotkey::start(app.handle().clone());
+            reminders::start(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
