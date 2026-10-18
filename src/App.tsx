@@ -10,6 +10,8 @@ import {
   type ConfirmationRequest,
   cancelAgent,
   confirmAgent,
+  pauseAgent,
+  resumeAgent,
   onAgentExecuting,
   runAgent,
 } from "./ipc/agent";
@@ -25,6 +27,7 @@ import {
 import { openApplication } from "./ipc/tools";
 import { AssistantSettings } from "./ui/AssistantSettings";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { Reader } from "./ui/Reader";
 import { Diagnostics } from "./ui/Diagnostics";
 import { SpeechSettings } from "./ui/SpeechSettings";
 import { errorText } from "./ui/errorText";
@@ -59,6 +62,9 @@ const AVAILABILITY_TEXT: Record<Availability, string> = {
   available: "Available",
 };
 
+/** The assistant is working on a request (Pause is offered). */
+const WORKING: ReadonlySet<Phase> = new Set(["understanding", "planning", "executing", "verifying"]);
+
 /** Phases in which pressing the microphone starts a new turn (barge-in while speaking). */
 const MIC_STARTS: ReadonlySet<Phase> = new Set(["idle", "cancelled", "speaking"]);
 
@@ -78,6 +84,8 @@ export default function App() {
   const [question, setQuestion] = useState<ConfirmationRequest | null>(null);
   const [answerHint, setAnswerHint] = useState<string | null>(null);
   const [answerListening, setAnswerListening] = useState(false);
+  const [stepText, setStepText] = useState("");
+  const [reading, setReading] = useState<{ title: string; text: string; key: number } | null>(null);
   const [prefsError, setPrefsError] = useState<string | null>(null);
   const [synth] = useState(() => new WindowsSynthesizer());
   const [voiceInstalled, setVoiceInstalled] = useState(synth.available);
@@ -151,6 +159,8 @@ export default function App() {
       runAgent: (t) => runAgent(id, t),
       confirmAgent: (cid, approved) => confirmAgent(id, cid, approved),
       onExecuting: (cb) => onAgentExecuting(id, cb),
+      onProgress: setStepText,
+      readAloud: (r) => setReading({ ...r, key: Date.now() }),
       dispatch,
       say,
       note: noteAction,
@@ -229,6 +239,7 @@ export default function App() {
     }
     if (!MIC_STARTS.has(state.phase)) return;
     synth.cancel(); // barge-in: stop talking as soon as the user wants to speak
+    setReading(null);
     const id = ++taskId.current;
     if (!recognizer.current) {
       // Loaded on first use so the large speech SDK doesn't slow down startup.
@@ -251,14 +262,29 @@ export default function App() {
     const text = draft.trim();
     if (!text) return;
     synth.cancel();
+    setReading(null);
     addMessage("you", text);
     setDraft("");
     dispatch({ type: "TEXT_SUBMITTED", text });
   }
 
+  async function onPause() {
+    if (await pauseAgent().catch(() => false)) {
+      dispatch({ type: "PAUSE" });
+      setStepText("");
+    }
+  }
+
+  async function onResume() {
+    await resumeAgent().catch(() => false);
+    dispatch({ type: "RESUME" });
+  }
+
   function onStop() {
     taskId.current++;
     setQuestion(null);
+    setStepText("");
+    setReading(null);
     void cancelAgent().catch(() => {});
     recognizer.current?.cancel();
     synth.cancel();
@@ -309,7 +335,11 @@ export default function App() {
             <span className={`status-symbol phase-${state.phase}`} aria-hidden="true">
               {phase.symbol}
             </span>
-            <span className="status-label">{phase.label}</span>
+            <span className="status-label">
+              {stepText && (state.phase === "executing" || state.phase === "planning")
+                ? `${stepText}…`
+                : phase.label}
+            </span>
           </section>
 
           <div className="mic-area">
@@ -346,6 +376,16 @@ export default function App() {
               </p>
             )}
           </div>
+
+          {reading && (
+            <Reader
+              key={reading.key}
+              title={reading.title}
+              text={reading.text}
+              synth={synth}
+              onClose={() => setReading(null)}
+            />
+          )}
 
           <section className="transcript" aria-label="Conversation">
             <h2 className="visually-hidden">Conversation</h2>
@@ -475,6 +515,25 @@ export default function App() {
       )}
 
       <footer className="stopbar">
+        {assistantReady.current && (WORKING.has(state.phase) || state.phase === "paused") && (
+          <button
+            type="button"
+            className="pause"
+            onClick={() => void (state.phase === "paused" ? onResume() : onPause())}
+          >
+            {state.phase === "paused" ? (
+              <>
+                <span aria-hidden="true">▶</span>
+                <span>Continue</span>
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">❚❚</span>
+                <span>Pause</span>
+              </>
+            )}
+          </button>
+        )}
         <button
           type="button"
           className="stop"

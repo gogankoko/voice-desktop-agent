@@ -15,6 +15,8 @@ fn main() {
         "clear_gemini_key",
         "run_agent",
         "cancel_agent",
+        "pause_agent",
+        "resume_agent",
         "confirm_agent",
         "get_diagnostics",
         "clear_diagnostics",

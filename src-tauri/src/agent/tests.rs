@@ -62,6 +62,7 @@ struct FakeDesktop {
     followed: Mutex<Vec<String>>,
     pressed: Mutex<Vec<String>>,
     typed: Mutex<Vec<(String, String)>>,
+    backs: Mutex<Vec<(Option<String>, Option<String>)>>,
 }
 
 const PAGE_LINKS: [&str; 3] = ["Go to the second page", "Delete my account", "News"];
@@ -108,6 +109,34 @@ impl ToolExecutor for FakeDesktop {
                 page_address: Some("https://example.org/".into()),
             })
             .collect())
+    }
+    async fn go_back(
+        &self,
+        expected_current: Option<String>,
+        expected_previous: Option<String>,
+    ) -> Result<NavigationResult, String> {
+        self.backs
+            .lock()
+            .unwrap()
+            .push((expected_current, expected_previous.clone()));
+        Ok(NavigationResult {
+            verified: true,
+            address: expected_previous,
+        })
+    }
+    async fn read_article(&self) -> Result<PageText, String> {
+        Ok(PageText {
+            title: "Library hours".into(),
+            address: None,
+            text: "The council met on Tuesday. Secret article text.".into(),
+            truncated: false,
+        })
+    }
+    async fn list_windows(&self) -> Result<Vec<crate::tools::win::WindowSummary>, String> {
+        Ok(vec![crate::tools::win::WindowSummary {
+            title: "Yeat - YouTube".into(),
+            app: "Microsoft Edge".into(),
+        }])
     }
     async fn list_controls(&self) -> Result<Vec<ControlRef>, String> {
         let c = |kind, label: &str, sensitive| ControlRef {
@@ -1072,5 +1101,245 @@ fn adding_to_basket_runs_but_checkout_asks_first() {
         *desk.pressed.lock().unwrap(),
         vec!["Add milk to basket".to_string()],
         "declined: checkout not pressed"
+    );
+}
+
+#[test]
+fn list_open_windows_reports_titles_and_apps() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[("w1", "list_open_windows", json!({}))])),
+        Ok(text_turn("You have YouTube open in Edge.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let out = finished(drive(&model, &desk, false));
+    let r = &results(&model)[0]["result"];
+    assert_eq!(r["windows_front_first"][0]["app"], "Microsoft Edge");
+    assert!(out.actions[0].summary.contains("open windows"));
+}
+
+#[test]
+fn read_aloud_text_goes_to_the_app_not_the_model() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[("r1", "read_page_aloud", json!({}))])),
+        Ok(text_turn("Here's the article.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let out = finished(drive(&model, &desk, false));
+    let r = out.read_aloud.expect("text handed to the app");
+    assert!(r.text.contains("Secret article text"));
+    let sent: String = model
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .flatten()
+        .map(|v| v.to_string())
+        .collect();
+    assert!(
+        !sent.contains("Secret article text"),
+        "article text must never reach the model"
+    );
+}
+
+// ---- Pause (hold) ----
+
+#[test]
+fn held_task_starts_nothing_until_released() {
+    let cancel = std::sync::Arc::new(Cancel::default());
+    cancel.hold();
+    let c2 = cancel.clone();
+    let released_at = std::sync::Arc::new(Mutex::new(None));
+    let r2 = released_at.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        *r2.lock().unwrap() = Some(std::time::Instant::now());
+        c2.release();
+    });
+    let model = ScriptedModel::new(vec![Ok(text_turn("Hello"))]);
+    let desk = FakeDesktop::default();
+    let mut run = TaskRun::new(&[], "hi", false);
+    let d = block_on(run.drive(&model, &desk, &cancel, &mut |_| {})).unwrap();
+    let called_at = std::time::Instant::now();
+    assert!(matches!(d, Drive::Finished(..)));
+    assert!(released_at.lock().unwrap().unwrap() <= called_at);
+}
+
+#[test]
+fn stop_during_a_hold_cancels_promptly() {
+    let cancel = std::sync::Arc::new(Cancel::default());
+    cancel.hold();
+    let c2 = cancel.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        c2.cancel();
+    });
+    let model = ScriptedModel::new(vec![Ok(text_turn("Hello"))]);
+    let desk = FakeDesktop::default();
+    let mut run = TaskRun::new(&[], "hi", false);
+    let d = block_on(run.drive(&model, &desk, &cancel, &mut |_| {})).unwrap();
+    assert!(matches!(d, Drive::Cancelled(_)));
+    assert_eq!(model.calls(), 0);
+}
+
+#[test]
+fn release_is_not_mistaken_for_cancel() {
+    let cancel = Cancel::default();
+    cancel.hold();
+    cancel.release();
+    assert!(!cancel.is_cancelled());
+    // cancelled() must not complete just because release() notified.
+    let done = block_on(async {
+        tokio::select! {
+            _ = cancel.cancelled() => true,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => false,
+        }
+    });
+    assert!(!done);
+}
+
+#[test]
+fn held_time_does_not_count_and_long_holds_cancel() {
+    let cancel = Cancel::default();
+    cancel.hold();
+    // Held throughout: the 250 ms active limit must NOT be reached; after the 500 ms max hold the
+    // task is cancelled (the task then ends as Cancelled, not as a timeout).
+    let limit_reached = block_on(async {
+        tokio::select! {
+            _ = active_time_limit(&cancel, std::time::Duration::from_millis(250), std::time::Duration::from_millis(500)) => true,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(1500)) => false,
+        }
+    });
+    assert!(!limit_reached, "held time must not count toward the limit");
+    assert!(
+        cancel.is_cancelled(),
+        "a hold longer than the maximum cancels the task"
+    );
+}
+
+#[test]
+fn active_time_counts_when_not_held() {
+    let cancel = Cancel::default();
+    let reached = block_on(async {
+        tokio::select! {
+            _ = active_time_limit(&cancel, std::time::Duration::from_millis(250), std::time::Duration::from_secs(60)) => true,
+            _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => false,
+        }
+    });
+    assert!(reached);
+    assert!(!cancel.is_cancelled());
+}
+
+// ---- Undo ----
+
+fn ask_state(
+    state: &AgentState,
+    desk: &FakeDesktop,
+    turns: Vec<Result<ModelTurn, ModelError>>,
+) -> AgentOutcome {
+    let model = ScriptedModel::new(turns);
+    block_on(state.run(&model, desk, "x", false, |_| {})).unwrap()
+}
+
+fn undo_turns() -> Vec<Result<ModelTurn, ModelError>> {
+    vec![
+        Ok(call_turn(&[("u1", "undo_last_action", json!({}))])),
+        Ok(text_turn("Done.")),
+    ]
+}
+
+#[test]
+fn undo_goes_back_after_following_a_link() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    ask_state(
+        &state,
+        &desk,
+        vec![
+            Ok(call_turn(&[("l1", "list_links", json!({}))])),
+            Ok(call_turn(&[("f1", "follow_link", json!({"number": 1}))])),
+            Ok(text_turn("Here's the second page.")),
+        ],
+    );
+    let out = ask_state(&state, &desk, undo_turns());
+    assert_eq!(
+        *desk.backs.lock().unwrap(),
+        vec![(
+            Some("https://example.org/2".to_string()),
+            Some("https://example.org/".to_string())
+        )]
+    );
+    assert!(out.actions[0].summary.contains("went back"));
+    // Undone once: a second undo has nothing left.
+    let model = ScriptedModel::new(undo_turns());
+    block_on(state.run(&model, &desk, "undo again", false, |_| {})).unwrap();
+    let r = &results(&model)[0]["result"];
+    assert_eq!(r["undone"], false);
+}
+
+#[test]
+fn undo_puts_back_what_was_in_a_box() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    ask_state(
+        &state,
+        &desk,
+        vec![
+            Ok(call_turn(&[("c0", "list_page_controls", json!({}))])),
+            Ok(call_turn(&[(
+                "t1",
+                "type_text",
+                json!({"number": 1, "text": "milk"}),
+            )])),
+            Ok(text_turn("Typed.")),
+        ],
+    );
+    ask_state(&state, &desk, undo_turns());
+    let typed = desk.typed.lock().unwrap().clone();
+    assert_eq!(
+        typed,
+        vec![
+            ("Search products".to_string(), "milk".to_string()),
+            ("Search products".to_string(), String::new()),
+        ]
+    );
+}
+
+#[test]
+fn undo_explains_what_it_cannot_undo() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    ask_state(
+        &state,
+        &desk,
+        vec![
+            Ok(call_turn(&[("c0", "list_page_controls", json!({}))])),
+            Ok(call_turn(&[("p3", "press_button", json!({"number": 3}))])),
+            Ok(text_turn("Added.")),
+        ],
+    );
+    let model = ScriptedModel::new(undo_turns());
+    block_on(state.run(&model, &desk, "undo", false, |_| {})).unwrap();
+    let r = &results(&model)[0]["result"];
+    assert_eq!(r["undone"], false);
+    assert!(
+        r["reason"]
+            .as_str()
+            .unwrap()
+            .contains("can't undo a button press")
+    );
+    assert!(desk.backs.lock().unwrap().is_empty());
+}
+
+#[test]
+fn undo_with_nothing_to_undo() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    let model = ScriptedModel::new(undo_turns());
+    block_on(state.run(&model, &desk, "undo", false, |_| {})).unwrap();
+    assert!(
+        results(&model)[0]["result"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("nothing")
     );
 }

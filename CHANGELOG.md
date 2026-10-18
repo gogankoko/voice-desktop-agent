@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Step-by-step progress:** the status line shows what's happening ("Opening youtube.com", "Typing 'Yeat' into 'Search'").
+- **Pause / Continue** a request while it's working.
+- **Undo:** "undo that" goes back a page or puts back what was in a box; it says honestly when something can't be undone.
+- **Read aloud:** "read me this article" reads the page in full with the Windows voice, with Pause / Continue / Go back a bit. The article text is not sent to Google.
+- **What's on my screen:** the assistant can list the open windows (only when asked).
+- Fixed an occasional error inside the speech library when listening ended.
+
 - **Web pages: buttons and typing.** The assistant can search on websites and fill in ordinary boxes ("search this shop for milk", "add milk to the basket"). It types only after confirming the right box in the front browser window has the cursor, never presses Enter, and never types into password or payment boxes. Checkout, pay, place order, sign up and similar buttons ask for confirmation first.
 - Requests may now take up to 8 assistant steps / 120 seconds for multi-step tasks.
 - **Fixed: multi-step requests stopping after the first step** ("open YouTube and search for Yeat" only opened YouTube). The app now waits for pages to finish loading, recognises search boxes with suggestions (like YouTube's), falls back to the stronger `gemini-3.6-flash` before `gemini-3.5-flash-lite` when the main model is rate-limited, waits instead of giving up when rate-limited mid-task, and tells the assistant to finish every part of a request. Verified live: one request opened YouTube, typed Yeat, pressed Search and reported the results.

@@ -4,8 +4,12 @@ import type { ActionReport, AgentOutcome, ConfirmationRequest } from "../ipc/age
 export interface AgentTurnDeps {
   runAgent: (text: string) => Promise<AgentOutcome>;
   confirmAgent: (confirmationId: string, approved: boolean) => Promise<AgentOutcome>;
-  /** Subscribes to "a tool started" for this task; returns an unsubscribe. */
-  onExecuting: (cb: () => void) => Promise<() => void>;
+  /** Subscribes to "a step started" (with a plain description) for this task; returns an unsubscribe. */
+  onExecuting: (cb: (detail: string) => void) => Promise<() => void>;
+  /** Hands a long text to the app's reader (read aloud by the app, never by the model). */
+  readAloud?: (r: { title: string; text: string }) => void;
+  /** Shows what the assistant is doing right now ("" clears it). */
+  onProgress?: (detail: string) => void;
   dispatch: (e: ConversationEvent) => void;
   say: (text: string) => void;
   /** Records an action as observed by the app (shown, not spoken). */
@@ -54,18 +58,22 @@ export async function answerConfirmation(
 type StartExecuting = () => void;
 
 async function withProgress(deps: AgentTurnDeps, body: (s: StartExecuting) => Promise<void>) {
-  let executing = false;
+  // Both events are no-ops unless the conversation is still before "executing", so this is
+  // safe to call repeatedly (e.g. when a step started while the user had paused).
   const startExecuting = () => {
-    if (executing || !deps.isCurrent()) return;
-    executing = true;
-    deps.dispatch({ type: "INTENT_READY" }); // no-ops when already past understanding
+    if (!deps.isCurrent()) return;
+    deps.dispatch({ type: "INTENT_READY" });
     deps.dispatch({ type: "PLAN_READY" });
   };
-  const unsubscribe = await deps.onExecuting(startExecuting);
+  const unsubscribe = await deps.onExecuting((detail) => {
+    startExecuting();
+    if (deps.isCurrent()) deps.onProgress?.(detail);
+  });
   try {
     await body(startExecuting);
   } finally {
     unsubscribe();
+    deps.onProgress?.("");
   }
 }
 
@@ -88,6 +96,9 @@ async function call(
     return;
   }
 
+  // If the last step finished while the user had paused, show the result anyway.
+  if (isCurrent()) dispatch({ type: "RESUME" });
+
   if (!isCurrent() || outcome.cancelled) {
     const happened = outcome.actions.filter((a) => a.ok && !a.practice);
     outcome.actions.filter((a) => a.ok).forEach(deps.note);
@@ -98,6 +109,7 @@ async function call(
   }
 
   outcome.actions.forEach(deps.note);
+  if (outcome.readAloud) deps.readAloud?.(outcome.readAloud);
 
   if (outcome.confirmation) {
     if (outcome.actions.length > 0) startExecuting();

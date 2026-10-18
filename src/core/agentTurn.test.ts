@@ -35,6 +35,7 @@ const outcome = (o: Partial<AgentOutcome>): AgentOutcome => ({
   actions: [],
   cancelled: false,
   confirmation: null,
+  readAloud: null,
   ...o,
 });
 
@@ -50,6 +51,7 @@ class Harness {
   confirmCalls: Array<[string, boolean]> = [];
   executingCb: (() => void) | null = null;
   unsubscribed = 0;
+  progress: string[] = [];
 
   constructor(
     private run: Backend,
@@ -62,17 +64,19 @@ class Harness {
       this.confirmCalls.push([id, approved]);
       return this.confirm(this);
     },
-    onExecuting: async (cb: () => void) => {
-      this.executingCb = cb;
+    onExecuting: async (cb: (detail: string) => void) => {
+      this.executingCb = () => cb("Opening example.org");
       return () => void this.unsubscribed++;
     },
     dispatch: (e: ConversationEvent) => {
+      const before = this.state.phase;
       this.state = transition(this.state, e);
-      this.phases.push(this.state.phase);
+      if (this.state.phase !== before) this.phases.push(this.state.phase);
     },
     say: (t: string) => void this.said.push(t),
     note: (a: ActionReport) => void this.notes.push(a),
     askConfirmation: (c: ConfirmationRequest) => void this.asked.push(c),
+    onProgress: (d: string) => void this.progress.push(d),
     isCurrent: () => this.current,
   };
 
@@ -99,6 +103,7 @@ describe("runAgentRequest", () => {
     });
     await runAgentRequest("open", h.deps);
     expect(h.phases).toEqual(["planning", "executing", "verifying", "speaking"]);
+    expect(h.progress).toEqual(["Opening example.org", ""]);
     expect(h.notes).toEqual([OPENED]);
   });
 
@@ -175,6 +180,18 @@ describe("confirmations", () => {
     await answerConfirmation(QUESTION, true, h.deps);
     expect(h.notes).toEqual([]);
     expect(h.state.phase).toBe("speaking");
+  });
+
+  it("a result that arrives while paused is still shown", async () => {
+    const h = new Harness(async (self) => {
+      self.executingCb?.();
+      self.deps.dispatch({ type: "PAUSE" });
+      expect(self.state.phase).toBe("paused");
+      return outcome({ reply: "Done.", actions: [OPENED] });
+    });
+    await runAgentRequest("open", h.deps);
+    expect(h.state.phase).toBe("speaking");
+    expect(h.said).toEqual(["Done."]);
   });
 
   it("a later step can ask again", async () => {

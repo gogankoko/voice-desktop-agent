@@ -50,6 +50,13 @@
 - All targets come from a fresh `list_page_controls` in the same request; a changed page means nothing is touched.
 - Browser actions use the front-most browser window. If that's a different page than expected, the page-address check stops any action.
 
+## Pause, undo, read aloud, open windows (since 0.3)
+
+- Pause holds the task at the next step boundary (no step is interrupted halfway); Stop still cancels immediately, including while paused.
+- Undo only acts when it can check its target: Back is pressed only if the browser still shows the page the assistant navigated to, and only the toolbar's Back button (never a "Back" link on the page). Restoring a box goes through the same foreground/focus checks as typing.
+- Read-aloud text goes from Rust straight to the app's voice; the model only learns that reading started.
+- `list_open_windows` sends window titles (which can be personal) to the model only when the person asks what's on their screen.
+
 ## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |

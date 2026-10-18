@@ -15,7 +15,7 @@
 - [x] Text-size preference persisted in SQLite (`prefs.rs`), verified across restart (`scripts/smoke-prefs.ps1`)
 - [x] Text size uses radio buttons (all options visible, drivable via UIA SelectionItem)
 - [x] `.gitattributes` for consistent line endings
-- [ ] Component tests (jsdom + Testing Library), moved to Phase 8 hardening
+- [x] Component tests (jsdom + Testing Library, axe): done in Phase 8
 
 ## Phase 3: Voice interface ✅
 - [x] Provider review (2026-10-18): Windows built-in speech recognition needs MSIX package identity, so it's not usable with our installer. Owner chose **Azure AI Speech** (F0 free tier), English
@@ -27,7 +27,7 @@
 - [x] SDK audio processor served from the app (no CSP loosening)
 - [x] Fake-key rejection test: `scripts/smoke-speech-setup.ps1` (needs the app in the foreground)
 - [x] Real voice test with the owner's Azure key and microphone (2026-10-18: spoke "open my browser", Edge opened)
-- [ ] Mock providers exposed as a visible "practice mode" in the UI (currently tests only)
+- [x] Decided: no pretend microphone (it would confuse users). Without keys the app works by typing with fixed phrases; Practice mode covers high-risk actions; mock providers drive the automated tests
 
 ## Phase 4: First real computer tool ✅
 - [x] Win32 helpers via the official `windows` crate: foreground window, process path, default https handler
@@ -35,8 +35,8 @@
 - [x] Verification: the launched program's window must reach the foreground within 8 s; otherwise the app says it couldn't confirm
 - [x] Fixed-phrase recogniser for typed requests (temporary until Phase 5) and a task runner that stays honest after Stop
 - [x] Real desktop test: `scripts/smoke-open-browser.ps1` opened Edge, verified by the app and independently
-- [ ] Foreground-window check enforced in Rust before any input simulation (lands with `type_text`)
-- [ ] `get_active_window` exposed as an agent tool (internal only for now; the orchestrator arrives in Phase 5)
+- [x] Foreground-window check enforced in Rust before any input simulation (`type_into_field`)
+- [x] `list_open_windows` tool: open windows front-to-back with friendly app names, excluding the assistant itself
 
 ## Phase 5: Voice-to-computer with a reasoning model ✅
 - [x] Provider: **Google Gemini** (owner's choice, 2026-10-18), Interactions API, `gemini-3.8-flash`, `store: false`
@@ -47,9 +47,9 @@
 - [x] Short in-memory conversation history (6 turns, never saved)
 - [x] Settings: Gemini key with free-tier privacy notice; falls back to fixed phrases without a key
 - [x] Live tests with the owner's Gemini key (2026-10-18): full tool round trip; found and fixed 503 overload (retry + fallback model) and an over-strict key format check
-- [ ] Progress for multi-step plans beyond a single tool (arrives with more tools)
+- [x] Step-by-step progress in the status line ("Typing 'Yeat' into 'Search'…")
 
-## Phase 6: Interruption and safety (code complete)
+## Phase 6: Interruption and safety ✅
 - [x] Confirmation gate in Rust: high-risk calls pause the request; single-use id, 2-minute expiry, exact stored call runs on approval; Stop, decline, expiry, forged or reused ids run nothing
 - [x] Confirmation text built from validated arguments, not model prose; other calls proposed alongside wait
 - [x] Paused requests resume on the same Gemini model (thought signatures)
@@ -59,8 +59,8 @@
 - [x] Model told plainly when the user already confirmed/declined (live test caught a misleading reply)
 - [x] Model instructions consistent with the tool list (desktop test caught a refusal); primary and fallback models verified live
 - [x] Desktop test `scripts/smoke-confirm.ps1`: decline round passed repeatedly; approve round passed once; later runs skipped safely while the owner was using the PC
-- [ ] Pause/resume of a running multi-step task (meaningful once multi-step tools exist)
-- [ ] Undo for reversible actions (needs the first undoable tool)
+- [x] Pause / Continue: the step in progress finishes, nothing new starts; held time doesn't count toward the limit; holds over 15 min cancel
+- [x] Undo: browser Back after a link/button navigation (only if still on that page; verified), restore a box's previous text; explains what can't be undone
 
 ## Phase 7: Browser interaction ✅
 - [x] `open_website`: https-only public sites (`tools/web_url.rs`), launched as a single argument, verified from the address bar
@@ -76,7 +76,7 @@
 - [x] Password and payment-like boxes refused and never read (UIA IsPassword + label words)
 - [x] Consequential buttons (checkout, pay, place order, sign up, delete…) use the confirmation gate
 - [x] End-to-end (real app + Gemini + Edge, pretend shop `scripts/smoke-shop.ps1`): searched for milk (typing verified), added milk to the basket (page checked), checkout asked for confirmation, No pressed nothing
-- [ ] Reading a page aloud in full ("read me this article") with pause/continue
+- [x] Read a page aloud in full with Pause / Continue / Go back a bit; the text never goes to the model
 
 ## Phase 8: Hardening (in progress)
 - [x] Local diagnostics log, redacted before writing (keys, tokens, web addresses, emails, Windows user names); never conversation or page text; Help → show / copy / clear

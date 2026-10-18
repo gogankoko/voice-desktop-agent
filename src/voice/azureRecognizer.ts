@@ -63,10 +63,18 @@ export class AzureRecognizer implements SpeechRecognizer {
 
   private release(recognizer: sdk.SpeechRecognizer) {
     if (this.recognizer === recognizer) this.recognizer = null;
-    try {
-      recognizer.close(); // stops audio capture and closes the connection
-    } catch {
-      // already closed
-    }
+    // Closing synchronously inside the SDK's own result callback made the SDK touch freed
+    // internals afterwards ("Cannot read properties of null (reading 'reject')" in the log).
+    // Close on the next tick, with handlers so a late SDK error can't go unhandled.
+    setTimeout(() => {
+      try {
+        recognizer.close(
+          () => {},
+          () => {},
+        ); // stops audio capture and closes the connection
+      } catch {
+        // already closed
+      }
+    }, 0);
   }
 }

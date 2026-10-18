@@ -20,6 +20,8 @@
     "allow-clear-gemini-key",
     "allow-run-agent",
     "allow-cancel-agent",
+    "allow-pause-agent",
+    "allow-resume-agent",
     "allow-confirm-agent",
     "allow-get-diagnostics",
     "allow-clear-diagnostics",

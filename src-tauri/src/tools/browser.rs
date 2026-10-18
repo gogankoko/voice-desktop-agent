@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use windows::Win32::Foundation::{HWND, LPARAM};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
 };
@@ -27,19 +27,19 @@ use windows::Win32::UI::Accessibility::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP,
-    KEYEVENTF_UNICODE, SendInput, VIRTUAL_KEY, VK_CONTROL,
+    KEYEVENTF_UNICODE, SendInput, VIRTUAL_KEY, VK_CONTROL, VK_DELETE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowThreadProcessId,
-    IsWindowVisible, SetForegroundWindow,
+    GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
 };
-use windows::core::BOOL;
 
 use super::web_url::SafeUrl;
-use super::win::process_image_path;
+use super::win::{process_image_path, top_level_windows};
 
 const MAX_PAGE_CHARS: usize = 6000;
 const MAX_LINKS: usize = 40;
+/// Read-aloud text goes to the app's own voice, never to the model, so it can be longer.
+const MAX_READ_ALOUD_CHARS: usize = 60_000;
 const MAX_CONTROLS: usize = 60;
 
 /// Field labels the assistant must never type into, whatever it is asked.
@@ -122,22 +122,6 @@ fn control_type(
 ) -> Result<IUIAutomationCondition, String> {
     unsafe { a.CreatePropertyCondition(UIA_ControlTypePropertyId, &int_variant(ct.0)) }
         .map_err(|_| "Couldn't search the browser window.".to_string())
-}
-
-/// Visible top-level windows in z-order (front first).
-fn top_level_windows() -> Vec<HWND> {
-    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let list = unsafe { &mut *(lparam.0 as *mut Vec<HWND>) };
-        if unsafe { IsWindowVisible(hwnd) }.as_bool() && unsafe { GetWindowTextLengthW(hwnd) } > 0 {
-            list.push(hwnd);
-        }
-        true.into()
-    }
-    let mut list: Vec<HWND> = Vec::new();
-    unsafe {
-        let _ = EnumWindows(Some(collect), LPARAM(&mut list as *mut _ as isize));
-    }
-    list
 }
 
 fn same_exe(a: &Path, b: &Path) -> bool {
@@ -316,6 +300,37 @@ fn tidy(text: &str) -> String {
 }
 
 pub fn read_page(exe: &Path) -> Result<PageText, String> {
+    read_page_limited(exe, MAX_PAGE_CHARS)
+}
+
+/// The page's main prose for reading aloud (menus, buttons and short fragments dropped).
+pub fn read_article(exe: &Path) -> Result<PageText, String> {
+    let mut page = read_page_limited(exe, 200_000)?;
+    let article = article_text(&page.text);
+    page.truncated = article.chars().count() > MAX_READ_ALOUD_CHARS;
+    page.text = article.chars().take(MAX_READ_ALOUD_CHARS).collect();
+    Ok(page)
+}
+
+/// Keeps lines that read like sentences (6+ words or ending in . ! ?). Falls back to the whole
+/// text if that leaves too little, e.g. on pages that are mostly short items.
+pub fn article_text(text: &str) -> String {
+    let prose: Vec<&str> = text
+        .lines()
+        .filter(|l| {
+            let words = l.split_whitespace().count();
+            words >= 6 || (words >= 3 && l.trim_end().ends_with(['.', '!', '?']))
+        })
+        .collect();
+    let joined = prose.join("\n");
+    if joined.chars().count() >= 120 {
+        joined
+    } else {
+        text.to_string()
+    }
+}
+
+fn read_page_limited(exe: &Path, max_chars: usize) -> Result<PageText, String> {
     let b = Browser::find(exe)?;
     let doc = b.document()?;
     let title = name_of(&doc);
@@ -324,9 +339,9 @@ pub fn read_page(exe: &Path) -> Result<PageText, String> {
         .and_then(|r| unsafe { r.GetText(200_000) })
         .map(|t| tidy(&t.to_string()))
         .map_err(|_| "I couldn't read the text on this page.".to_string())?;
-    let truncated = text.chars().count() > MAX_PAGE_CHARS;
+    let truncated = text.chars().count() > max_chars;
     let text = if truncated {
-        text.chars().take(MAX_PAGE_CHARS).collect()
+        text.chars().take(max_chars).collect()
     } else {
         text
     };
@@ -661,11 +676,78 @@ fn replace_text_keystrokes(text: &str) -> Vec<INPUT> {
         key(VK_A, true),
         key(VK_CONTROL, true),
     ];
+    if text.is_empty() {
+        // Restoring an empty box: delete the selection.
+        inputs.push(key(VK_DELETE, false));
+        inputs.push(key(VK_DELETE, true));
+    }
     for unit in text.encode_utf16() {
         inputs.push(unicode(unit, false));
         inputs.push(unicode(unit, true));
     }
     inputs
+}
+
+/// Presses the browser's own Back button (in the toolbar, above the page; never a "Back"
+/// link inside the page). Only if the browser still shows `expected_current`, so it never goes
+/// back from a page the person has moved to since. Verified by the address returning to
+/// `expected_previous`.
+pub fn go_back(
+    exe: &Path,
+    expected_current: Option<&str>,
+    expected_previous: Option<&str>,
+) -> Result<NavigationResult, String> {
+    let b = Browser::find(exe)?;
+    let current = b.address();
+    if current.as_deref() != expected_current {
+        return Err(
+            "You've moved to a different page since then, so I won't go back blindly.".into(),
+        );
+    }
+    let page_top = unsafe { b.document()?.CurrentBoundingRectangle() }
+        .map(|r| r.top)
+        .unwrap_or(i32::MAX);
+    let buttons = control_type(&b.a, UIA_ButtonControlTypeId)?;
+    let all = unsafe { b.root.FindAll(TreeScope_Descendants, &buttons) }
+        .map_err(|_| "I couldn't find the browser's Back button.".to_string())?;
+    let back = (0..unsafe { all.Length() }.unwrap_or(0))
+        .filter_map(|i| unsafe { all.GetElement(i) }.ok())
+        .find(|e| {
+            name_of(e) == "Back"
+                && unsafe { e.CurrentBoundingRectangle() }
+                    .map(|r| r.bottom <= page_top)
+                    .unwrap_or(false)
+                && unsafe { e.CurrentIsEnabled() }
+                    .map(|x| x.as_bool())
+                    .unwrap_or(false)
+        })
+        .ok_or_else(|| {
+            "I couldn't find the browser's Back button (or there's no earlier page).".to_string()
+        })?;
+    let invoke =
+        unsafe { back.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId) }
+            .map_err(|_| "The Back button can't be pressed from here.".to_string())?;
+    unsafe { invoke.Invoke() }.map_err(|_| "Pressing Back didn't work.".to_string())?;
+
+    let deadline = Instant::now() + NAVIGATION_TIMEOUT;
+    let mut after = current.clone();
+    while Instant::now() < deadline {
+        std::thread::sleep(POLL);
+        if let Ok(b) = Browser::find(exe) {
+            after = b.address();
+            if after.is_some() && after.as_deref() == expected_previous {
+                wait_until_loaded(exe);
+                return Ok(NavigationResult {
+                    verified: true,
+                    address: after,
+                });
+            }
+        }
+    }
+    Ok(NavigationResult {
+        verified: false,
+        address: after,
+    })
 }
 
 /// Types `text` into an observed text box, replacing what's there.
@@ -782,6 +864,22 @@ mod tests {
     }
 
     #[test]
+    fn article_text_drops_menus_and_keeps_prose() {
+        let page = "Home\nNews\nSport\nSign in\nThe council met on Tuesday to discuss the new library opening hours.\nResidents welcomed the longer weekend hours.\nShare\nMore stories about the town centre and the library were published this week.\nNext";
+        let a = article_text(page);
+        assert!(a.starts_with("The council met"));
+        assert!(a.contains("Residents welcomed"));
+        assert!(!a.contains("Sign in"));
+        assert!(!a.lines().any(|l| l == "Share" || l == "Next"));
+    }
+
+    #[test]
+    fn article_text_falls_back_to_everything_when_little_prose() {
+        let page = "Milk\nBread\nEggs";
+        assert_eq!(article_text(page), page);
+    }
+
+    #[test]
     fn tidy_collapses_whitespace_and_blank_lines() {
         assert_eq!(tidy("  Hello   world \n\n\t\nBye  "), "Hello world\nBye\n");
     }
@@ -848,6 +946,18 @@ text:
         let stale = follow_link(&exe, second);
         println!("stale follow: {stale:?}");
         assert!(stale.is_err());
+
+        // Undo: the toolbar Back button returns to page one (and refuses if we're elsewhere).
+        let wrong = go_back(
+            &exe,
+            Some("https://not-this-page.example/"),
+            second.page_address.as_deref(),
+        );
+        assert!(wrong.is_err(), "must not go back from an unexpected page");
+        let back =
+            go_back(&exe, nav.address.as_deref(), second.page_address.as_deref()).expect("back");
+        println!("back: {back:?}");
+        assert!(back.verified, "should be back on the first page");
     }
 
     /// Live: the pretend shop. Lists controls, types into the search box, presses Search and
