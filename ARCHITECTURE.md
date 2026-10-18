@@ -16,7 +16,8 @@ No local HTTP server: the UI talks to Rust only through Tauri commands and event
 │  prefs.rs      SQLite (rusqlite, bundled) preferences in %APPDATA%\com.voiceagent…   │
 │  [planned] agent/      orchestrator: plan, risk-classify, confirm, execute, verify   │
 │  tools/        risk levels; open_app.rs (allowlisted launch + verify); win.rs (Win32)│
-│  [planned] uia/        Windows UI Automation (windows crate)                         │
+│  tools/browser.rs  UI Automation: open+verify, read, scroll, list/follow links       │
+│  tools/web_url.rs  https-only URL validation                                         │
 │  agent/        mod.rs orchestrator (bounded loop, cancel, dedupe, history)           │
 │                gemini.rs Interactions API client · registry.rs tool gate · prompt.rs │
 │  speech.rs     Azure key validation, STS token issue + cache                         │
@@ -80,6 +81,8 @@ plus `paused`, `recovering`, `cancelled`. See `src/core/conversation/machine.ts`
 - **WebView2 `HasKeyboardFocus` is not where keystrokes go.** It reflects DOM focus inside the WebView even when another app is in the foreground. `type_text` must check `GetForegroundWindow() == target HWND` **and** element focus immediately before sending input, and refuse otherwise.
 - **UIA `ValuePattern.SetValue` doesn't trigger React `onChange`** in WebView2. For web content, prefer real keyboard input (after the foreground check), then re-read the value to verify.
 - A `<select>` in WebView2 exposes only Value + ExpandCollapse, and its options never appear in the UIA tree when expanded from a background process. Radio buttons expose SelectionItem and work. The tool layer should expect many web dropdowns to be uncontrollable via UIA and fall back to keyboard (foreground-checked) or report "can't do this one".
+- Chromium (Edge) exposes the page as a `Document` element with Text and Scroll patterns, links as `Hyperlink` with Invoke, and the address bar as an `Edit` whose name contains "Address". Reading, scrolling and clicking links all work without the browser being in front and without keystrokes.
+- Identifying a link again: `(text, ordinal among links with that text, page address)`. Simpler than UIA runtime IDs and doubles as the "has anything changed?" check.
 - Buttons with `aria-pressed` are exposed as toggle buttons (TogglePattern, no InvokePattern). The tool layer must handle Invoke, Toggle and SelectionItem patterns.
 
 ## Planned native dependencies (to be verified before adding)

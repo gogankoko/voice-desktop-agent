@@ -45,8 +45,8 @@ export function AssistantSettings({ onChanged }: { onChanged: () => void }) {
     <section className="speech-settings" aria-labelledby="assistant-heading">
       <h3 id="assistant-heading">Understanding requests (Google Gemini)</h3>
       <p className="hint-left">
-        Your requests (what you say or type) are sent to Google to be understood. Google does
-        not keep them between requests. On Google's free tier, Google may use requests to
+        Your requests (what you say or type) are sent to Google to be understood. When you ask
+        about a web page, its text is sent too. Google does not keep them between requests. On Google's free tier, Google may use requests to
         improve its products; turning on billing in Google AI Studio stops that.
       </p>
 

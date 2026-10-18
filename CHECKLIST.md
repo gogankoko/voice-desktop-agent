@@ -62,12 +62,25 @@
 - [ ] Pause/resume of a running multi-step task (meaningful once multi-step tools exist)
 - [ ] Undo for reversible actions (needs the first undoable tool)
 
-## Phases 7–8
-See the master prompt §14. Not started.
+## Phase 7: Browser interaction (code complete)
+- [x] `open_website`: https-only public sites (`tools/web_url.rs`), launched as a single argument, verified from the address bar
+- [x] `read_webpage` (UIA Text pattern), `scroll_webpage` (Scroll pattern), `list_links` + `follow_link` (Invoke) via Windows UI Automation, no extensions or keystrokes
+- [x] Fresh observation: link numbers only from this request's latest list; page and link text re-checked before clicking; stale links refused
+- [x] Risky link texts (buy, pay, delete, sign out, download…) go through the confirmation gate with the real link text
+- [x] Page text sent to the model only as `untrusted_page_text` with a warning
+- [x] Local test pages (`src-tauri/tests/fixtures/`), since example.com asks not to be relied on for testing
+- [x] Live (real Edge): open + verify, read, list, scroll, follow, stale link refused
+- [x] Live (real Gemini + real Edge): read the secret word **and ignored the page's planted "open evil.example" instruction**; followed the right link; risky link paused; declined = nothing clicked
+- [ ] Buttons, forms and typing into web pages (need `type_text` with the foreground check; next)
+- [ ] Reading a page aloud in full ("read me this article") with pause/continue
+
+## Phase 8
+Hardening. Not started.
 
 ## Known limitations
 - Listening needs an Azure Speech key (docs/azure-speech-setup.md); understanding free-form requests needs a Gemini key (docs/gemini-setup.md).
-- The only computer action is still opening the default browser. No confirmation dialog yet, so only low-risk tools can exist. The only computer action is opening the default browser, triggered by a few fixed typed phrases.
+- Computer actions: open the browser, open https websites, read/scroll pages, follow links. No form filling, typing into pages or buttons yet.
+- Browser control relies on the browser's accessibility tree; the address bar is found by an English "Address" label, so non-English Windows/browsers may not verify navigation (it then says it couldn't confirm). The only computer action is opening the default browser, triggered by a few fixed typed phrases.
 - If the browser was already in front, verification can't tell a new window from the existing one.
 - The smoke test's typing step needs the app in the foreground (Windows foreground lock). Launching the app just before the test usually satisfies this.
 - The installer is unsigned, so Windows SmartScreen will warn when it runs. Code signing comes in Phase 8.
