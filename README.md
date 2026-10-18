@@ -33,6 +33,8 @@ eleaseoice-desktop-agent.exe
 powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1          # UI, IPC, typed request (no side effects)
 # VISIBLE SIDE EFFECT, opens your default browser:
 powershell -ExecutionPolicy Bypass -File scripts/smoke-open-browser.ps1
+# Confirmation gate in Practice mode (needs a Gemini key; launches the app itself; nothing is sent):
+powershell -ExecutionPolicy Bypass -File scripts/smoke-confirm.ps1
 # Sends a deliberately FAKE key to Microsoft and checks it is rejected and not stored:
 powershell -ExecutionPolicy Bypass -File scripts/smoke-speech-setup.ps1
 # close the app, then:
@@ -52,6 +54,10 @@ The first build downloads the NSIS tools from Tauri's GitHub releases (hash-veri
 ## Set up listening
 
 Talking to the assistant uses Microsoft Azure AI Speech (free F0 tier). See [docs/azure-speech-setup.md](docs/azure-speech-setup.md). Spoken replies use Windows' built-in voices and need no setup.
+
+## Practice mode
+
+Settings → **Practice mode** lets you try an important action (sending a pretend message) and see the confirmation screen. Nothing is ever really sent, and the app says so on screen.
 
 ## Set up understanding
 

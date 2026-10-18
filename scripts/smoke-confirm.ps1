@@ -83,8 +83,17 @@ try {
   if ($yes) {
     $yes.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
     Check (Wait-ListItemLike $win "Action: *Practice only: pretended to send a message to Anna*" 30) "approving ran exactly the practice action" "no practice action after Yes"
-    $reply = Wait-ListItemLike $win "Assistant: *sent*" 30
-    Check $reply "assistant reply: '$reply'" "no assistant reply after Yes"
+    # The reply after Yes: an assistant message that isn't the confirmation question.
+    $reply = $null
+    $deadline = (Get-Date).AddSeconds(30)
+    while (-not $reply -and (Get-Date) -lt $deadline) {
+      foreach ($e in $win.FindAll($T::Descendants, (New-Object $PropCond($A::ControlTypeProperty, $CT::ListItem)))) {
+        $n = $e.Current.Name
+        if ($n -like "Assistant: *" -and $n -notlike "*Before I go ahead*") { $reply = $n }
+      }
+      if (-not $reply) { Start-Sleep -Milliseconds 500 }
+    }
+    Check ($reply -like "*practice*" -or $reply -like "*nothing*sent*" -or $reply -like "*not*really*") "assistant said it was only practice: '$reply'" "reply after Yes didn't say it was practice: '$reply'"
   }
   if ($script:failed) { Dump-Transcript }
 } catch {
