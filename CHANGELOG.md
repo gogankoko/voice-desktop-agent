@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Talk from anywhere:** press Ctrl+Alt+Space (or, if another program already uses it, the shortcut shown in the app) to bring the assistant forward and start listening. It also answers its yes/no questions.
+- **Timers and reminders:** "remind me in 20 minutes to take my pills", "set a timer for 10 minutes", "remind me at 5 to call Anna", "what reminders do I have?". They chime, appear and are read aloud, and bring the app back if it was minimized. They only work while the app is open.
+- **Window control:** "switch to Spotify", "minimize this", "make it full screen", "close Notepad" (closing asks first).
+- **Computer status:** "how much battery do I have?", "am I online?", "how much space is left?".
 - **Open and operate your apps:** "open Spotify", "play Yeat on Spotify", "pause the music", "next song", "turn it up". The assistant can open any app in your Start menu by name, press buttons and type into search boxes inside it, and use the media keys. Command lines, system tools, installers and password managers are always off limits; buttons like remove, delete, send or buy ask you first.
 - **Make everything bigger:** the assistant can turn on Windows Magnifier and zoom in or out, zoom web pages, and open the right Windows Settings page for bigger text, display size or a bigger mouse pointer.
 - **Find your files (opt-in):** "find the photo I downloaded yesterday" searches file names in Downloads, Pictures, Documents and Desktop, then opens the photo or shows it in its folder. Off until you turn it on in Settings.

@@ -115,10 +115,22 @@
 - [x] Live with real Gemini: "Play Yeat on Spotify" opened Spotify, searched, pressed Play Yeat; "Pause the music" paused it
 - [ ] Other apps by voice (Word, Discord, Teams...) not yet tried; how well each works depends on how the app exposes its buttons to Windows accessibility
 
+## Phase 11: Everyday helpers
+- [x] Talk from anywhere with a keyboard shortcut: the first free one of Ctrl+Alt+Space, Ctrl+Alt+V, Ctrl+Shift+Space, Ctrl+Alt+A (Windows `RegisterHotKey`, no keyboard hook); the app shows which one it got
+- [x] Live: Ctrl+Alt+Space was taken on the test computer, Ctrl+Alt+V was used; it restored the minimized app, brought it to the front and started listening (from idle)
+- [x] Timers and reminders ("in 20 minutes", "at 17:30"): chime, shown, spoken, minimized window comes back and flashes; at most 20; up to 24 hours ahead
+- [x] Live: a 1-minute timer set through real Gemini went off in the real app while it was minimized
+- [x] Window control: switch to, minimize, maximize, restore, close (close asks first; it's like pressing X)
+- [x] Live: minimize/restore/maximize/close on the test's own Character Map window (found by process id)
+- [x] Computer status: battery and charging, internet connection, free disk space
+- [x] Live with real Gemini: reminder set, battery read, reminders listed
+- [ ] Reminders are kept only while the app is open (not saved to disk yet)
+
 ## Known limitations
 - Listening needs an Azure Speech key (docs/azure-speech-setup.md); understanding free-form requests needs a Gemini key (docs/gemini-setup.md).
 - Computer actions: open everyday apps and (by name) any app in the Start menu, press buttons and type in app windows, media keys, open https websites, read/scroll pages, follow links, type into ordinary boxes and press buttons, read any window's text when asked, Magnifier/zoom/Settings pages, and (opt-in) find files by name. Without a Gemini key, only a few fixed typed phrases work (e.g. opening the browser).
 - Browser control relies on the browser's accessibility tree; the address bar is found by an English "Address" label, so non-English Windows/browsers may not verify navigation (it then says it couldn't confirm).
+- Reminders are lost if the app is closed.
 - Typed text is one line, so an email message is written as one paragraph.
 - If the browser was already in front, verification can't tell a new window from the existing one.
 - The smoke test's typing step needs the app in the foreground (Windows foreground lock). Launching the app just before the test usually satisfies this.

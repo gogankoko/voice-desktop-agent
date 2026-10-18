@@ -179,6 +179,12 @@ pub fn local_now() -> String {
     )
 }
 
+/// The local clock: (hour, minute, second).
+pub fn local_hms() -> (u16, u16, u16) {
+    let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    (t.wHour, t.wMinute, t.wSecond)
+}
+
 /// Executable registered to open `https:` links, i.e. the user's default browser.
 pub fn default_browser_exe() -> Option<PathBuf> {
     let mut buf = vec![0u16; 1024];

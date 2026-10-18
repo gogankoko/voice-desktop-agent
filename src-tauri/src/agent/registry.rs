@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::reminders::ReminderTime;
 use crate::tools::Risk;
 use crate::tools::app_control::AppControl;
 use crate::tools::apps::MediaAction;
@@ -17,6 +18,7 @@ use crate::tools::files::{FileKind, When};
 use crate::tools::open_app::AllowedApp;
 use crate::tools::screen::{MagnifierAction, SettingsPage};
 use crate::tools::web_url::{SafeUrl, validate_url};
+use crate::tools::window_ops::WindowAction;
 
 const MAX_RECIPIENT_CHARS: usize = 100;
 const MAX_TYPED_CHARS: usize = 300;
@@ -160,6 +162,24 @@ pub enum ValidatedCall {
         replaces: usize,
     },
     MediaKey(MediaAction),
+    SetReminder {
+        when: ReminderTime,
+        text: String,
+    },
+    ListReminders,
+    /// `number` is the reminder's number from set_reminder / list_reminders.
+    CancelReminder {
+        number: u32,
+    },
+    /// `window` from the latest list_open_windows (None = the front window behind the
+    /// assistant; never for Close). `title`/`app` are filled in by the orchestrator.
+    ManageWindow {
+        action: WindowAction,
+        window: Option<u32>,
+        title: String,
+        app: String,
+    },
+    ComputerStatus,
     /// Practice mode only: pretends to send a message. Nothing is ever sent.
     PracticeSendMessage {
         to: String,
@@ -194,7 +214,16 @@ impl ValidatedCall {
             ValidatedCall::OpenInstalledApp { .. }
             | ValidatedCall::ListAppControls { .. }
             // Play/pause, skip and volume: momentary and easy to reverse.
-            | ValidatedCall::MediaKey(_) => Risk::Low,
+            | ValidatedCall::MediaKey(_)
+            // Local reminders and read-only status.
+            | ValidatedCall::SetReminder { .. }
+            | ValidatedCall::ListReminders
+            | ValidatedCall::CancelReminder { .. }
+            | ValidatedCall::ComputerStatus => Risk::Low,
+            // Closing a program can lose what's open in it: ask first. Switching, minimizing
+            // and resizing are easy to undo.
+            ValidatedCall::ManageWindow { action: WindowAction::Close, .. } => Risk::High,
+            ValidatedCall::ManageWindow { .. } => Risk::Low,
             ValidatedCall::PressAppButton { label, .. } => link_risk(label),
             // Replacing a lot of existing text (e.g. a document) could lose work: ask first.
             ValidatedCall::TypeIntoApp { replaces, .. } if *replaces > LONG_EXISTING_TEXT => Risk::High,
@@ -230,6 +259,11 @@ impl ValidatedCall {
             ValidatedCall::PressAppButton { .. } => "press_app_button",
             ValidatedCall::TypeIntoApp { .. } => "type_into_app",
             ValidatedCall::MediaKey(_) => "media_control",
+            ValidatedCall::SetReminder { .. } => "set_reminder",
+            ValidatedCall::ListReminders => "list_reminders",
+            ValidatedCall::CancelReminder { .. } => "cancel_reminder",
+            ValidatedCall::ManageWindow { .. } => "manage_window",
+            ValidatedCall::ComputerStatus => "computer_status",
             ValidatedCall::PracticeSendMessage { .. } => "practice_send_message",
         }
     }
@@ -293,6 +327,14 @@ impl ValidatedCall {
                 format!("Typing \u{201c}{text}\u{201d} into \u{201c}{label}\u{201d}")
             }
             ValidatedCall::MediaKey(a) => a.plain().to_string(),
+            ValidatedCall::SetReminder { .. } => "Setting a reminder".into(),
+            ValidatedCall::ListReminders => "Checking your reminders".into(),
+            ValidatedCall::CancelReminder { .. } => "Cancelling a reminder".into(),
+            ValidatedCall::ManageWindow { action, title, .. } if !title.is_empty() => {
+                format!("{} \u{201c}{title}\u{201d}", action.verb())
+            }
+            ValidatedCall::ManageWindow { action, .. } => format!("{} the window", action.verb()),
+            ValidatedCall::ComputerStatus => "Checking the computer".into(),
             ValidatedCall::PracticeSendMessage { to, .. } => {
                 format!("Sending the practice message to {to}")
             }
@@ -317,6 +359,8 @@ impl ValidatedCall {
                 | ValidatedCall::ListAppControls { .. }
                 // "Louder... louder", "next song... next".
                 | ValidatedCall::MediaKey(_)
+                | ValidatedCall::ListReminders
+                | ValidatedCall::ComputerStatus
         )
     }
 }
@@ -457,7 +501,25 @@ pub fn confirmation_text(call: &ValidatedCall) -> ConfirmationText {
             ],
             practice: false,
         },
-        ValidatedCall::OpenInstalledApp { .. }
+        ValidatedCall::ManageWindow { title, app, .. } => ConfirmationText {
+            action: format!("Close a window in {app}"),
+            details: vec![
+                Detail {
+                    label: "Window".into(),
+                    value: title.clone(),
+                },
+                Detail {
+                    label: "Note".into(),
+                    value: "Like pressing its X: the program may ask to save first.".into(),
+                },
+            ],
+            practice: false,
+        },
+        ValidatedCall::SetReminder { .. }
+        | ValidatedCall::ListReminders
+        | ValidatedCall::CancelReminder { .. }
+        | ValidatedCall::ComputerStatus
+        | ValidatedCall::OpenInstalledApp { .. }
         | ValidatedCall::ListAppControls { .. }
         | ValidatedCall::MediaKey(_)
         | ValidatedCall::ListControls
@@ -590,6 +652,24 @@ struct ListAppControlsArgs {
     window: Option<u32>,
     #[serde(default)]
     contains: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetReminderArgs {
+    text: String,
+    #[serde(default)]
+    in_minutes: Option<u32>,
+    #[serde(default)]
+    at: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManageWindowArgs {
+    action: WindowAction,
+    #[serde(default)]
+    window: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -840,6 +920,51 @@ pub fn declarations(practice: bool) -> Vec<Value> {
                 "required": ["action"]
             }
         }),
+        json!({
+            "type": "function",
+            "name": "set_reminder",
+            "description": "Sets a reminder or timer. When it's due, the app chimes, shows it and says it out loud. Give `text` (a few words, e.g. 'take your pills' or 'your 10-minute timer is done') and EITHER `in_minutes` (1 to 1440) OR `at` (local 24-hour time 'HH:MM'; the next time that comes round). Reminders only work while this app stays open: mention that the first time.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "in_minutes": {"type": "integer"},
+                    "at": {"type": "string", "description": "24-hour local time, e.g. '17:30'."}
+                },
+                "required": ["text"]
+            }
+        }),
+        json!({ "type": "function", "name": "list_reminders",
+            "description": "Lists the reminders and timers that are set, soonest first, with their numbers and times.",
+            "parameters": {"type": "object", "properties": {}}
+        }),
+        json!({
+            "type": "function",
+            "name": "cancel_reminder",
+            "description": "Cancels a reminder or timer by its number (from set_reminder or list_reminders).",
+            "parameters": {
+                "type": "object",
+                "properties": {"number": {"type": "integer"}},
+                "required": ["number"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "manage_window",
+            "description": "Switches to (brings to the front), minimizes, maximizes (full size), restores, or closes a window. Give `window` from list_open_windows (call that first to find e.g. Spotify or Notepad). Without `window` it acts on the front window behind the assistant. Closing always needs `window`, asks the person first, and is like pressing the window's X (the program may ask to save).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["switch_to", "minimize", "maximize", "restore", "close"]},
+                    "window": {"type": "integer"}
+                },
+                "required": ["action"]
+            }
+        }),
+        json!({ "type": "function", "name": "computer_status",
+            "description": "Reads the battery level and whether it's charging, whether the computer is connected to the internet, and the free space on the main disk.",
+            "parameters": {"type": "object", "properties": {}}
+        }),
     ]);
     if practice {
         tools.push(json!({
@@ -1063,6 +1188,63 @@ pub fn validate(name: &str, arguments: &Value, practice: bool) -> Result<Validat
         "media_control" => serde_json::from_value::<MediaArgs>(arguments.clone())
             .map(|a| ValidatedCall::MediaKey(a.action))
             .map_err(|_| Refusal("Invalid arguments. `action` must be one of the listed values.".into())),
+        "set_reminder" => {
+            let a = serde_json::from_value::<SetReminderArgs>(arguments.clone()).map_err(|_| {
+                Refusal("Invalid arguments. Give `text` and either `in_minutes` or `at`.".into())
+            })?;
+            let text = bounded("text", &a.text, crate::reminders::MAX_TEXT_CHARS)?;
+            if text.contains('\n') {
+                return Err(Refusal("`text` must be one line.".into()));
+            }
+            let when = match (a.in_minutes, a.at) {
+                (Some(m), None) if (1..=crate::reminders::MAX_MINUTES).contains(&m) => {
+                    ReminderTime::InMinutes(m)
+                }
+                (Some(_), None) => {
+                    return Err(Refusal("`in_minutes` must be 1 to 1440 (24 hours).".into()));
+                }
+                (None, Some(at)) => match crate::reminders::parse_clock(&at) {
+                    Some((hour, minute)) => ReminderTime::At { hour, minute },
+                    None => {
+                        return Err(Refusal(
+                            "`at` must be a 24-hour time like '17:30'.".into(),
+                        ));
+                    }
+                },
+                _ => {
+                    return Err(Refusal("Give exactly one of `in_minutes` or `at`.".into()));
+                }
+            };
+            Ok(ValidatedCall::SetReminder { when, text })
+        }
+        "list_reminders" | "computer_status" => {
+            serde_json::from_value::<NoArgs>(arguments.clone())
+                .map_err(|_| Refusal("This tool takes no arguments.".into()))?;
+            Ok(if name == "list_reminders" {
+                ValidatedCall::ListReminders
+            } else {
+                ValidatedCall::ComputerStatus
+            })
+        }
+        "cancel_reminder" => serde_json::from_value::<PressButtonArgs>(arguments.clone())
+            .map(|a| ValidatedCall::CancelReminder { number: a.number })
+            .map_err(|_| Refusal("Invalid arguments. Give exactly `number`.".into())),
+        "manage_window" => {
+            let a = serde_json::from_value::<ManageWindowArgs>(arguments.clone()).map_err(|_| {
+                Refusal("Invalid arguments. Give `action` from the list and optionally `window`.".into())
+            })?;
+            if a.action == WindowAction::Close && a.window.is_none() {
+                return Err(Refusal(
+                    "To close a window, give its `window` number from list_open_windows.".into(),
+                ));
+            }
+            Ok(ValidatedCall::ManageWindow {
+                action: a.action,
+                window: a.window,
+                title: String::new(),
+                app: String::new(),
+            })
+        }
         "practice_send_message" if practice => {
             let a = serde_json::from_value::<PracticeSendMessageArgs>(arguments.clone()).map_err(
                 |_| Refusal("Invalid arguments. Give exactly `to` and `message`.".into()),
@@ -1140,8 +1322,8 @@ mod tests {
                 message: "Hello".into()
             })
         );
-        assert_eq!(declarations(false).len(), 24);
-        assert_eq!(declarations(true).len(), 25);
+        assert_eq!(declarations(false).len(), 29);
+        assert_eq!(declarations(true).len(), 30);
     }
 
     #[test]
@@ -1384,6 +1566,78 @@ mod tests {
             Ok(ValidatedCall::MediaKey(MediaAction::NextTrack))
         );
         assert!(validate("media_control", &json!({"action": "shutdown"}), false).is_err());
+    }
+
+    #[test]
+    fn helper_tools_validate_strictly() {
+        assert_eq!(
+            validate(
+                "set_reminder",
+                &json!({"text": "take your pills", "in_minutes": 20}),
+                false
+            ),
+            Ok(ValidatedCall::SetReminder {
+                when: ReminderTime::InMinutes(20),
+                text: "take your pills".into()
+            })
+        );
+        assert_eq!(
+            validate(
+                "set_reminder",
+                &json!({"text": "call Anna", "at": "17:30"}),
+                false
+            ),
+            Ok(ValidatedCall::SetReminder {
+                when: ReminderTime::At {
+                    hour: 17,
+                    minute: 30
+                },
+                text: "call Anna".into()
+            })
+        );
+        for bad in [
+            json!({"text": "x", "in_minutes": 0}),
+            json!({"text": "x", "in_minutes": 1441}),
+            json!({"text": "x", "at": "5pm"}),
+            json!({"text": "x", "in_minutes": 5, "at": "17:30"}),
+            json!({"text": "x"}),
+            json!({"text": "", "in_minutes": 5}),
+            json!({"text": "a\nb", "in_minutes": 5}),
+            json!({"text": "x", "in_minutes": 5, "sound": "loud"}),
+        ] {
+            assert!(validate("set_reminder", &bad, false).is_err(), "{bad}");
+        }
+        assert!(validate("manage_window", &json!({"action": "close"}), false).is_err());
+        assert!(validate("manage_window", &json!({"action": "delete"}), false).is_err());
+        assert!(matches!(
+            validate("manage_window", &json!({"action": "minimize"}), false),
+            Ok(ValidatedCall::ManageWindow {
+                action: WindowAction::Minimize,
+                window: None,
+                ..
+            })
+        ));
+        let close = validate(
+            "manage_window",
+            &json!({"action": "close", "window": 2}),
+            false,
+        )
+        .unwrap();
+        assert_eq!(close.risk(), Risk::High);
+        assert_eq!(
+            validate(
+                "manage_window",
+                &json!({"action": "switch_to", "window": 2}),
+                false
+            )
+            .unwrap()
+            .risk(),
+            Risk::Low
+        );
+        assert_eq!(
+            validate("computer_status", &json!({}), false),
+            Ok(ValidatedCall::ComputerStatus)
+        );
     }
 
     #[test]

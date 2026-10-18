@@ -11,9 +11,13 @@ pub mod files;
 pub mod open_app;
 #[cfg(windows)]
 pub mod screen;
+#[cfg(windows)]
+pub mod system_status;
 pub mod web_url;
 #[cfg(windows)]
 pub mod win;
+#[cfg(windows)]
+pub mod window_ops;
 #[cfg(windows)]
 pub mod window_text;
 

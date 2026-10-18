@@ -11,6 +11,7 @@ This app is built so that you can tell exactly what leaves your computer and whe
 | Gemini key | Windows Credential Manager, `VoiceDesktopAgent/Gemini` | Until removed | Settings → Understanding → Remove key |
 | Technical log (errors, status codes, which tools ran, timings) | `%APPDATA%\com.voiceagent.desktop\logs\diagnostics.log` (max ~256 KB + one older file) | Rolls over by size | Help → Clear them |
 | The conversation on screen and the last 6 turns used as context | App memory only | Until the app closes | Close the app |
+| Reminders and timers (their few words of text and time) | App memory only | Until they go off, are cancelled, or the app closes | Ask to cancel them, or close the app |
 
 **Never stored:** audio recordings, screenshots, web page text, passwords or payment details, full conversation transcripts. The technical log is redacted before writing: keys, tokens, web addresses, email addresses and your Windows user name are replaced, and it never contains what you said or what a page said.
 
@@ -27,6 +28,8 @@ This app is built so that you can tell exactly what leaves your computer and whe
 - **When you ask what's on your screen:** the titles of your open windows.
 - **When you ask about a window (e.g. "explain this error"):** up to about 4,000 characters of that window's text and its button names (never password boxes).
 - **When you ask the assistant to do something in an app (e.g. Spotify):** the names of the buttons and boxes visible in that app's window, and the start of what's typed in its boxes (never password boxes).
+- **When you ask about the computer:** battery level, whether it's charging and online, and free disk space.
+- **When you set or ask about reminders:** their text and times (as part of your request).
 - **When you ask for help writing an email:** what you want to say, and the assistant's draft (it writes the text it types).
 - **When file search is on and you ask for a file:** the names, folder names, dates and sizes of up to 10 matching files (never their contents or full paths).
 - Requests are sent with `store: false`, so Google doesn't keep them as stored interactions.

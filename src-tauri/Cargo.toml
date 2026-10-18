@@ -30,10 +30,12 @@ url = "2"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
+    "Win32_Networking_NetworkListManager",
     "Win32_Security_Credentials",
     "Win32_System_Com",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Ole",
+    "Win32_System_Power",
     "Win32_System_SystemInformation",
     "Win32_Storage_FileSystem",
     "Win32_System_Threading",

@@ -16,6 +16,7 @@ import {
   runAgent,
 } from "./ipc/agent";
 import { type AppStatus, type Availability, getAppStatus } from "./ipc/appStatus";
+import { onReminderDue, onTalkShortcut } from "./ipc/events";
 import {
   type Preferences,
   TEXT_SCALE,
@@ -32,6 +33,7 @@ import { Diagnostics } from "./ui/Diagnostics";
 import { SpeechSettings } from "./ui/SpeechSettings";
 import { errorText } from "./ui/errorText";
 import { PHASE_TEXT } from "./ui/phaseText";
+import { playChime } from "./voice/chime";
 import type { SpeechRecognizer } from "./voice/types";
 import { WindowsSynthesizer } from "./voice/windowsSynthesizer";
 import "./App.css";
@@ -94,6 +96,8 @@ export default function App() {
   // Incremented by Stop and by each new turn; work whose id is stale must not act or report.
   const taskId = useRef(0);
   const recognizer = useRef<SpeechRecognizer | null>(null);
+  const talkShortcut = useRef<() => void>(() => {});
+  const reminderRef = useRef<(text: string) => void>(() => {});
   const speakReplies = useRef(prefs.speakReplies);
   speakReplies.current = prefs.speakReplies;
   const assistantReady = useRef(false);
@@ -258,6 +262,23 @@ export default function App() {
     });
   }
 
+  function remind(text: string) {
+    playChime();
+    const line = `Reminder: ${text}`;
+    addMessage("assistant", `⏰ ${line}`);
+    if (speakReplies.current) synth.speak(line);
+  }
+
+  useEffect(() => {
+    const subscriptions = [
+      onTalkShortcut(() => talkShortcut.current()),
+      onReminderDue((text) => reminderRef.current(text)),
+    ];
+    return () => {
+      for (const s of subscriptions) void s.then((unsubscribe) => unsubscribe()).catch(() => {});
+    };
+  }, []);
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     const text = draft.trim();
@@ -297,6 +318,13 @@ export default function App() {
   const listening = state.phase === "listening";
   const voiceReady = status?.speechRecognition === "available";
   const micEnabled = voiceReady && (listening || MIC_STARTS.has(state.phase));
+  reminderRef.current = remind;
+  // The talk shortcut does what the visible button would: answer an open question, or talk.
+  talkShortcut.current = () => {
+    setView("main");
+    if (question) void answerBySpeaking();
+    else if (micEnabled) void onMic();
+  };
   const phase = PHASE_TEXT[state.phase];
 
   return (
@@ -322,7 +350,8 @@ export default function App() {
 
       <div className="notice" role="note">
         <strong>Early test version.</strong> You can talk to me in your own words. I can work in your
-        web browser, make your screen bigger, and find your files if you allow it in Settings.
+        web browser and your apps (like Spotify), set reminders, make your screen bigger, and find
+        your files if you allow it in Settings.
       </div>
       {prefs.practiceMode && (
         <div className="practice-banner" role="note">
@@ -365,7 +394,7 @@ export default function App() {
                   ? "To talk to me, set up Listening in Settings. You can type below meanwhile."
                   : listening
                     ? "The microphone is on. Speak now, then pause when you're done."
-                    : "Press to talk. The microphone is only on while this button says Listening."}
+                    : `Press to talk${status.talkShortcut ? `, or press ${status.talkShortcut} from anywhere` : ""}. The microphone is only on while this button says Listening.`}
             </p>
             {!voiceReady && status && (
               <button type="button" onClick={() => setView("settings")}>
@@ -430,6 +459,22 @@ export default function App() {
           <p>
             Press <strong>Talk to me</strong> and say what you'd like, in your own words. Or type it
             instead.
+          </p>
+          {status?.talkShortcut ? (
+            <p>
+              From any program, press <strong>{status.talkShortcut}</strong> to bring me forward and
+              start talking. It also answers my yes-or-no questions by voice.
+            </p>
+          ) : (
+            <p>
+              The keyboard shortcut for talking isn't available, because other programs already use
+              all of the ones I can use.
+            </p>
+          )}
+          <p>
+            Things you can ask: "play Yeat on Spotify", "pause the music", "turn it up", "remind me
+            in 20 minutes to take my pills", "switch to Notepad", "how much battery do I have?".
+            Reminders only work while this app is open.
           </p>
           <p>
             The microphone is only on while the button says <strong>Listening</strong>. Press it

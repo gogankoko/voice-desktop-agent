@@ -26,6 +26,8 @@ pub struct AppStatus {
     pub speech_synthesis: Availability,
     pub reasoning_model: Availability,
     pub computer_control: Availability,
+    /// The keyboard shortcut that starts talking from anywhere, if one could be registered.
+    pub talk_shortcut: Option<&'static str>,
 }
 
 /// `stt_configured` / `llm_configured`: provider keys are stored in Credential Manager.
@@ -46,6 +48,7 @@ pub fn current_status(stt_configured: bool, llm_configured: bool) -> AppStatus {
             Availability::NeedsSetup
         },
         computer_control: Availability::Limited,
+        talk_shortcut: crate::hotkey::registered(),
     }
 }
 
