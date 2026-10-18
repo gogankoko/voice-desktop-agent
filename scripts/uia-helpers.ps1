@@ -74,8 +74,15 @@ function Send-RequestSafely($win, $text) {
   Start-Sleep -Milliseconds 200
   if ([Fg]::GetForegroundWindow() -ne $hwnd -or -not $box.Current.HasKeyboardFocus) { return $false }
   [System.Windows.Forms.SendKeys]::SendWait($text)
-  Start-Sleep -Milliseconds 300
   # UIA ValuePattern.SetValue would not fire React onChange, so keystrokes are used above.
+  # Confirm the text really arrived (and Send became enabled) before pressing it.
+  $send = Find-ByName $win "Send" $CT::Button
+  for ($i = 0; $i -lt 20; $i++) {
+    $value = $box.GetCurrentPropertyValue([System.Windows.Automation.ValuePattern]::ValueProperty)
+    if ($value -eq $text -and $send.Current.IsEnabled) { break }
+    Start-Sleep -Milliseconds 150
+  }
+  if ($value -ne $text) { throw "typed text did not arrive in the request box (got '$value')" }
   [void](Click $win "Send")
   return $true
 }

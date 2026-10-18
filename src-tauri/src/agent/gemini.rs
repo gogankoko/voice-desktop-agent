@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::prompt::SYSTEM_INSTRUCTION;
+use super::prompt::system_instruction;
 use super::registry;
 
 /// Pinned rather than a `-latest` alias so behaviour doesn't change underneath us.
@@ -185,7 +185,7 @@ pub fn request_body(model: &str, input: &[Value], practice: bool) -> Value {
     json!({
         "model": model,
         "input": input,
-        "system_instruction": SYSTEM_INSTRUCTION,
+        "system_instruction": system_instruction(practice),
         "tools": registry::declarations(practice),
         "store": false,
         "generation_config": {
@@ -550,7 +550,7 @@ mod tests {
             ),
             (
                 "+ system_instruction",
-                json!({"model": MODEL, "input": user, "store": false, "system_instruction": SYSTEM_INSTRUCTION}),
+                json!({"model": MODEL, "input": user, "store": false, "system_instruction": system_instruction(false)}),
             ),
             (
                 "+ tools",

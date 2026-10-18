@@ -550,3 +550,38 @@ fn live_practice_confirmation_round_trip() {
     println!("actions: {:?}\nreply: {}", done.actions, done.reply);
     assert!(done.actions.iter().any(|a| a.practice));
 }
+
+/// Same as above but forced onto the fallback model, which serves requests when the
+/// primary is overloaded. Run: cargo test ... live_fallback -- --ignored --nocapture
+#[test]
+#[ignore = "live call using the owner's stored Gemini key"]
+fn live_fallback_model_uses_practice_tool() {
+    let key = crate::secrets::load_gemini_key()
+        .unwrap()
+        .expect("a Gemini key is stored");
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    let model = super::gemini::Gemini::resume(
+        reqwest::Client::new(),
+        key,
+        true,
+        super::gemini::FALLBACK_MODEL,
+    );
+    let out = block_on(state.run(
+        &model,
+        &desk,
+        "Please send a message to Anna saying I will be there at five",
+        true,
+        |_| {},
+    ))
+    .unwrap_or_else(|e| panic!("{e}"));
+    println!(
+        "reply: {}\nconfirmation: {:?}",
+        out.reply,
+        out.confirmation.as_ref().map(|c| &c.text.details)
+    );
+    assert!(
+        out.confirmation.is_some(),
+        "fallback model didn't use the practice tool"
+    );
+}
