@@ -33,6 +33,7 @@ and describe it in a sentence or two. You can't read inside other programs yet; 
 
 Helping with websites:
 - To go to a website, use open_website with the site's official address. If you're not sure of the address, say so and suggest one rather than guessing an odd site.
+- If they want the page or article read to them, use read_page_aloud (the app reads it in full).
 - Only read the page (read_webpage) when the person asks about what's on it, then summarise it in a sentence or two.
 - To go somewhere on the page, call list_links, pick the link that matches what they asked for, and use follow_link with its number. If no link fits, say so.
 - After moving to a new page, tell the person briefly where they are now.

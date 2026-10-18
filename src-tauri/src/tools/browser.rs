@@ -38,6 +38,8 @@ use super::win::{process_image_path, top_level_windows};
 
 const MAX_PAGE_CHARS: usize = 6000;
 const MAX_LINKS: usize = 40;
+/// Read-aloud text goes to the app's own voice, never to the model, so it can be longer.
+const MAX_READ_ALOUD_CHARS: usize = 60_000;
 const MAX_CONTROLS: usize = 60;
 
 /// Field labels the assistant must never type into, whatever it is asked.
@@ -298,6 +300,37 @@ fn tidy(text: &str) -> String {
 }
 
 pub fn read_page(exe: &Path) -> Result<PageText, String> {
+    read_page_limited(exe, MAX_PAGE_CHARS)
+}
+
+/// The page's main prose for reading aloud (menus, buttons and short fragments dropped).
+pub fn read_article(exe: &Path) -> Result<PageText, String> {
+    let mut page = read_page_limited(exe, 200_000)?;
+    let article = article_text(&page.text);
+    page.truncated = article.chars().count() > MAX_READ_ALOUD_CHARS;
+    page.text = article.chars().take(MAX_READ_ALOUD_CHARS).collect();
+    Ok(page)
+}
+
+/// Keeps lines that read like sentences (6+ words or ending in . ! ?). Falls back to the whole
+/// text if that leaves too little, e.g. on pages that are mostly short items.
+pub fn article_text(text: &str) -> String {
+    let prose: Vec<&str> = text
+        .lines()
+        .filter(|l| {
+            let words = l.split_whitespace().count();
+            words >= 6 || (words >= 3 && l.trim_end().ends_with(['.', '!', '?']))
+        })
+        .collect();
+    let joined = prose.join("\n");
+    if joined.chars().count() >= 120 {
+        joined
+    } else {
+        text.to_string()
+    }
+}
+
+fn read_page_limited(exe: &Path, max_chars: usize) -> Result<PageText, String> {
     let b = Browser::find(exe)?;
     let doc = b.document()?;
     let title = name_of(&doc);
@@ -306,9 +339,9 @@ pub fn read_page(exe: &Path) -> Result<PageText, String> {
         .and_then(|r| unsafe { r.GetText(200_000) })
         .map(|t| tidy(&t.to_string()))
         .map_err(|_| "I couldn't read the text on this page.".to_string())?;
-    let truncated = text.chars().count() > MAX_PAGE_CHARS;
+    let truncated = text.chars().count() > max_chars;
     let text = if truncated {
-        text.chars().take(MAX_PAGE_CHARS).collect()
+        text.chars().take(max_chars).collect()
     } else {
         text
     };
@@ -761,6 +794,22 @@ mod tests {
             inputs.len(),
             4 + 2 * "milk & eggs 🥚".encode_utf16().count()
         );
+    }
+
+    #[test]
+    fn article_text_drops_menus_and_keeps_prose() {
+        let page = "Home\nNews\nSport\nSign in\nThe council met on Tuesday to discuss the new library opening hours.\nResidents welcomed the longer weekend hours.\nShare\nMore stories about the town centre and the library were published this week.\nNext";
+        let a = article_text(page);
+        assert!(a.starts_with("The council met"));
+        assert!(a.contains("Residents welcomed"));
+        assert!(!a.contains("Sign in"));
+        assert!(!a.lines().any(|l| l == "Share" || l == "Next"));
+    }
+
+    #[test]
+    fn article_text_falls_back_to_everything_when_little_prose() {
+        let page = "Milk\nBread\nEggs";
+        assert_eq!(article_text(page), page);
     }
 
     #[test]

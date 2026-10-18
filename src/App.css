@@ -512,3 +512,20 @@ summary {
     border-color: GrayText;
   }
 }
+
+.reader {
+  border: 3px solid var(--accent);
+  border-radius: 12px;
+  padding: 0.75rem 1rem 1rem;
+  background: var(--surface);
+}
+
+.reader h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15em;
+}
+
+.reader-text {
+  font-size: 1.15em;
+  line-height: 1.6;
+}

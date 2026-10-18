@@ -6,6 +6,8 @@ export interface AgentTurnDeps {
   confirmAgent: (confirmationId: string, approved: boolean) => Promise<AgentOutcome>;
   /** Subscribes to "a step started" (with a plain description) for this task; returns an unsubscribe. */
   onExecuting: (cb: (detail: string) => void) => Promise<() => void>;
+  /** Hands a long text to the app's reader (read aloud by the app, never by the model). */
+  readAloud?: (r: { title: string; text: string }) => void;
   /** Shows what the assistant is doing right now ("" clears it). */
   onProgress?: (detail: string) => void;
   dispatch: (e: ConversationEvent) => void;
@@ -104,6 +106,7 @@ async function call(
   }
 
   outcome.actions.forEach(deps.note);
+  if (outcome.readAloud) deps.readAloud?.(outcome.readAloud);
 
   if (outcome.confirmation) {
     if (outcome.actions.length > 0) startExecuting();

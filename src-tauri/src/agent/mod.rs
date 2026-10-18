@@ -86,6 +86,15 @@ pub struct AgentOutcome {
     pub cancelled: bool,
     /// Set when the request is paused waiting for the user's explicit yes or no.
     pub confirmation: Option<ConfirmationRequest>,
+    /// Text the app should read aloud itself (never sent to the model).
+    pub read_aloud: Option<ReadAloudText>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadAloudText {
+    pub title: String,
+    pub text: String,
 }
 
 impl AgentOutcome {
@@ -95,6 +104,7 @@ impl AgentOutcome {
             actions,
             cancelled: false,
             confirmation: None,
+            read_aloud: None,
         }
     }
 }
@@ -120,6 +130,7 @@ pub trait ToolExecutor {
     fn list_windows(
         &self,
     ) -> impl Future<Output = Result<Vec<crate::tools::win::WindowSummary>, String>> + Send;
+    fn read_article(&self) -> impl Future<Output = Result<PageText, String>> + Send;
     fn press_button(
         &self,
         c: ControlRef,
@@ -166,6 +177,9 @@ impl ToolExecutor for DesktopExecutor {
     }
     async fn follow_link(&self, link: LinkRef) -> Result<NavigationResult, String> {
         blocking(move || crate::tools::browser::follow_link(&browser_exe()?, &link)).await
+    }
+    async fn read_article(&self) -> Result<PageText, String> {
+        blocking(|| crate::tools::browser::read_article(&browser_exe()?)).await
     }
     async fn list_windows(&self) -> Result<Vec<crate::tools::win::WindowSummary>, String> {
         blocking(|| Ok(crate::tools::win::open_windows_except_self(8))).await
@@ -261,6 +275,8 @@ pub struct TaskRun {
     links: Vec<LinkRef>,
     /// The latest `list_page_controls` result; `press_button` / `type_text` numbers refer to it.
     controls: Vec<ControlRef>,
+    /// Set by `read_page_aloud`; handed to the app, never to the model.
+    read_aloud: Option<ReadAloudText>,
 }
 
 impl TaskRun {
@@ -277,15 +293,15 @@ impl TaskRun {
             practice,
             links: Vec::new(),
             controls: Vec::new(),
+            read_aloud: None,
         }
     }
 
     fn finish(&mut self, reply: String) -> Drive {
         let turns = [user_step(&self.utterance), model_text_step(&reply)];
-        Drive::Finished(
-            AgentOutcome::reply(reply, std::mem::take(&mut self.actions)),
-            turns,
-        )
+        let mut outcome = AgentOutcome::reply(reply, std::mem::take(&mut self.actions));
+        outcome.read_aloud = self.read_aloud.take();
+        Drive::Finished(outcome, turns)
     }
 
     /// Advances until the request finishes, is cancelled, or needs the user's confirmation.
@@ -616,6 +632,47 @@ impl TaskRun {
                     }
                 }
             }
+            ValidatedCall::ReadAloud => match exec.read_article().await {
+                Ok(page) if !page.text.trim().is_empty() => {
+                    let chars = page.text.chars().count();
+                    self.report(
+                        "read_page_aloud",
+                        true,
+                        true,
+                        format!("Reading \u{201c}{}\u{201d} aloud", page.title),
+                    );
+                    self.read_aloud = Some(ReadAloudText {
+                        title: page.title,
+                        text: page.text,
+                    });
+                    function_result(
+                        call,
+                        json!({
+                            "started": true,
+                            "characters": chars,
+                            "note": "The app is now reading the page aloud to the person with its own voice. You do not get the text. Reply with one short sentence, for example: Here's the article."
+                        }),
+                        false,
+                    )
+                }
+                Ok(_) => {
+                    self.report(
+                        "read_page_aloud",
+                        false,
+                        false,
+                        "This page has no text to read".into(),
+                    );
+                    function_result(
+                        call,
+                        json!({ "error": "The page has no text to read." }),
+                        true,
+                    )
+                }
+                Err(why) => {
+                    self.report("read_page_aloud", false, false, why.clone());
+                    function_result(call, json!({ "error": why }), true)
+                }
+            },
             ValidatedCall::ListOpenWindows => match exec.list_windows().await {
                 Ok(windows) => {
                     let list: Vec<Value> = windows
@@ -835,6 +892,7 @@ impl AgentState {
                 actions,
                 cancelled: true,
                 confirmation: None,
+                read_aloud: None,
             }),
             Ok(Ok(Drive::Finished(outcome, turns))) => {
                 let mut h = self.history.lock().expect("agent lock");
@@ -864,6 +922,7 @@ impl AgentState {
                     actions,
                     cancelled: false,
                     confirmation: Some(request),
+                    read_aloud: None,
                 })
             }
         }

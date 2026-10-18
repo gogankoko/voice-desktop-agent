@@ -109,6 +109,14 @@ impl ToolExecutor for FakeDesktop {
             })
             .collect())
     }
+    async fn read_article(&self) -> Result<PageText, String> {
+        Ok(PageText {
+            title: "Library hours".into(),
+            address: None,
+            text: "The council met on Tuesday. Secret article text.".into(),
+            truncated: false,
+        })
+    }
     async fn list_windows(&self) -> Result<Vec<crate::tools::win::WindowSummary>, String> {
         Ok(vec![crate::tools::win::WindowSummary {
             title: "Yeat - YouTube".into(),
@@ -1092,4 +1100,28 @@ fn list_open_windows_reports_titles_and_apps() {
     let r = &results(&model)[0]["result"];
     assert_eq!(r["windows_front_first"][0]["app"], "Microsoft Edge");
     assert!(out.actions[0].summary.contains("open windows"));
+}
+
+#[test]
+fn read_aloud_text_goes_to_the_app_not_the_model() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[("r1", "read_page_aloud", json!({}))])),
+        Ok(text_turn("Here's the article.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let out = finished(drive(&model, &desk, false));
+    let r = out.read_aloud.expect("text handed to the app");
+    assert!(r.text.contains("Secret article text"));
+    let sent: String = model
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .flatten()
+        .map(|v| v.to_string())
+        .collect();
+    assert!(
+        !sent.contains("Secret article text"),
+        "article text must never reach the model"
+    );
 }

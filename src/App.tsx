@@ -25,6 +25,7 @@ import {
 import { openApplication } from "./ipc/tools";
 import { AssistantSettings } from "./ui/AssistantSettings";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { Reader } from "./ui/Reader";
 import { Diagnostics } from "./ui/Diagnostics";
 import { SpeechSettings } from "./ui/SpeechSettings";
 import { errorText } from "./ui/errorText";
@@ -79,6 +80,7 @@ export default function App() {
   const [answerHint, setAnswerHint] = useState<string | null>(null);
   const [answerListening, setAnswerListening] = useState(false);
   const [stepText, setStepText] = useState("");
+  const [reading, setReading] = useState<{ title: string; text: string; key: number } | null>(null);
   const [prefsError, setPrefsError] = useState<string | null>(null);
   const [synth] = useState(() => new WindowsSynthesizer());
   const [voiceInstalled, setVoiceInstalled] = useState(synth.available);
@@ -153,6 +155,7 @@ export default function App() {
       confirmAgent: (cid, approved) => confirmAgent(id, cid, approved),
       onExecuting: (cb) => onAgentExecuting(id, cb),
       onProgress: setStepText,
+      readAloud: (r) => setReading({ ...r, key: Date.now() }),
       dispatch,
       say,
       note: noteAction,
@@ -231,6 +234,7 @@ export default function App() {
     }
     if (!MIC_STARTS.has(state.phase)) return;
     synth.cancel(); // barge-in: stop talking as soon as the user wants to speak
+    setReading(null);
     const id = ++taskId.current;
     if (!recognizer.current) {
       // Loaded on first use so the large speech SDK doesn't slow down startup.
@@ -253,6 +257,7 @@ export default function App() {
     const text = draft.trim();
     if (!text) return;
     synth.cancel();
+    setReading(null);
     addMessage("you", text);
     setDraft("");
     dispatch({ type: "TEXT_SUBMITTED", text });
@@ -262,6 +267,7 @@ export default function App() {
     taskId.current++;
     setQuestion(null);
     setStepText("");
+    setReading(null);
     void cancelAgent().catch(() => {});
     recognizer.current?.cancel();
     synth.cancel();
@@ -353,6 +359,16 @@ export default function App() {
               </p>
             )}
           </div>
+
+          {reading && (
+            <Reader
+              key={reading.key}
+              title={reading.title}
+              text={reading.text}
+              synth={synth}
+              onClose={() => setReading(null)}
+            />
+          )}
 
           <section className="transcript" aria-label="Conversation">
             <h2 className="visually-hidden">Conversation</h2>

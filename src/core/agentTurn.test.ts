@@ -35,6 +35,7 @@ const outcome = (o: Partial<AgentOutcome>): AgentOutcome => ({
   actions: [],
   cancelled: false,
   confirmation: null,
+  readAloud: null,
   ...o,
 });
 

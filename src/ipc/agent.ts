@@ -25,6 +25,7 @@ export const agentOutcomeSchema = z.strictObject({
   actions: z.array(actionReportSchema),
   cancelled: z.boolean(),
   confirmation: confirmationRequestSchema.nullable(),
+  readAloud: z.strictObject({ title: z.string(), text: z.string() }).nullable(),
 });
 
 export const assistantSetupSchema = z.strictObject({
