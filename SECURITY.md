@@ -70,6 +70,15 @@
 - `read_window` reads text and button names from one open window (by number from `list_open_windows`, or the front window other than this app) only when asked: never password boxes, at most 4,000 characters, sent to the model as untrusted text. It never clicks or types in that window.
 - Before any High-risk button press (e.g. Send), Rust reads the page's ordinary text boxes again and adds their current values (e.g. To, Subject, Message; never password or payment boxes; up to 6, each shortened to 600 characters) to the confirmation screen. What the person approves is what's on the page at that moment.
 
+## Installed apps (since 0.3)
+
+- `open_installed_app` takes a plain name (no paths, commands or arguments) and opens only an app listed in the Start menu, through its own Start-menu entry (`shell:AppsFolder\<id>`), with no arguments. Command lines, PowerShell, Terminal, Registry Editor, Task Manager, admin tools (`.msc`), Control Panel, Windows Security, installers, uninstallers, Python/WSL and scripts are refused, by name and by target. Several matches: nothing opens and the person is asked.
+- `list_app_controls` / `press_app_button` / `type_into_app` work in one app window at a time. Refused: this assistant's window, web browsers (the page tools with their address checks are used instead), command lines, system and security tools, Settings, Remote Desktop, sign-in prompts and password managers.
+- Every press or typing re-finds the same control (kind, label, position) in the same window first; typing uses the same foreground/focus checks as web pages and never sends Enter or Tab. Password and payment-like boxes are never typed into or read.
+- Risk: buttons with words like remove, delete, send, buy, sign up are High (confirmation shows the app and button, plus the window's filled-in boxes); typing that would replace more than 100 existing characters is High (the confirmation says how many).
+- `media_control` presses the keyboard's media keys (play/pause, next, previous, volume, mute). They go to Windows, never into the front window.
+- App window text (button labels, box contents up to 200 characters) is sent to Gemini only when the assistant lists that window's controls for a request.
+
 ## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |

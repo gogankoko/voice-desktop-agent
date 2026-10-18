@@ -104,9 +104,20 @@
 - [x] Live: Notepad and Calculator opened and verified
 - [ ] Not yet tried end-to-end with Gemini (the free-tier quota was used up during development): the email, error-message and app requests by voice
 
+## Phase 10: Operating installed apps (e.g. Spotify)
+- [x] Open any app in the Start menu by name ("open Spotify"); command lines, system/admin tools, installers and uninstallers are refused; several matches -> the assistant asks which
+- [x] List the buttons and text boxes in an app's window (optionally filtered by words), press a button, type into a box: same re-find and foreground/focus checks as web pages
+- [x] Never in browsers (page tools instead), command lines, system/security tools, Settings or password managers
+- [x] Risky app buttons (remove, delete, send, buy...) ask first; replacing more than 100 characters already in a box asks first
+- [x] Media keys: play/pause, next/previous track, volume up/down, mute
+- [x] Live: Start menu read (182 apps), Spotify found, Command Prompt refused
+- [x] Live: Spotify opened by name, "Yeat" typed into its search box and checked, "Play Yeat" found
+- [x] Live with real Gemini: "Play Yeat on Spotify" opened Spotify, searched, pressed Play Yeat; "Pause the music" paused it
+- [ ] Other apps by voice (Word, Discord, Teams...) not yet tried; how well each works depends on how the app exposes its buttons to Windows accessibility
+
 ## Known limitations
 - Listening needs an Azure Speech key (docs/azure-speech-setup.md); understanding free-form requests needs a Gemini key (docs/gemini-setup.md).
-- Computer actions: open a fixed list of everyday apps, open https websites, read/scroll pages, follow links, type into ordinary boxes and press buttons, read any window's text when asked, Magnifier/zoom/Settings pages, and (opt-in) find files by name. Without a Gemini key, only a few fixed typed phrases work (e.g. opening the browser).
+- Computer actions: open everyday apps and (by name) any app in the Start menu, press buttons and type in app windows, media keys, open https websites, read/scroll pages, follow links, type into ordinary boxes and press buttons, read any window's text when asked, Magnifier/zoom/Settings pages, and (opt-in) find files by name. Without a Gemini key, only a few fixed typed phrases work (e.g. opening the browser).
 - Browser control relies on the browser's accessibility tree; the address bar is found by an English "Address" label, so non-English Windows/browsers may not verify navigation (it then says it couldn't confirm).
 - Typed text is one line, so an email message is written as one paragraph.
 - If the browser was already in front, verification can't tell a new window from the existing one.

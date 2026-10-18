@@ -1,6 +1,10 @@
 //! Computer-control tools. Each tool declares its risk level; see SECURITY.md.
 
 #[cfg(windows)]
+pub mod app_control;
+#[cfg(windows)]
+pub mod apps;
+#[cfg(windows)]
 pub mod browser;
 #[cfg(windows)]
 pub mod files;
