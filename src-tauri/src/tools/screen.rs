@@ -165,6 +165,24 @@ pub fn magnifier(action: MagnifierAction) -> Result<MagnifierResult, String> {
     })
 }
 
+/// Opens the Settings app's home page.
+pub fn open_settings_home() -> std::io::Result<()> {
+    let r = unsafe {
+        ShellExecuteW(
+            None,
+            w!("open"),
+            w!("ms-settings:"),
+            None,
+            None,
+            SW_SHOWNORMAL,
+        )
+    };
+    if (r.0 as isize) <= 32 {
+        return Err(std::io::Error::other("ShellExecute failed"));
+    }
+    Ok(())
+}
+
 /// Opens a fixed Windows Settings page. Verified by the Settings app running afterwards.
 pub fn open_settings_page(page: SettingsPage) -> Result<bool, String> {
     let r = unsafe {

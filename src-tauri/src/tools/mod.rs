@@ -10,6 +10,8 @@ pub mod screen;
 pub mod web_url;
 #[cfg(windows)]
 pub mod win;
+#[cfg(windows)]
+pub mod window_text;
 
 use serde::Serialize;
 

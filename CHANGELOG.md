@@ -4,6 +4,9 @@
 
 - **Make everything bigger:** the assistant can turn on Windows Magnifier and zoom in or out, zoom web pages, and open the right Windows Settings page for bigger text, display size or a bigger mouse pointer.
 - **Find your files (opt-in):** "find the photo I downloaded yesterday" searches file names in Downloads, Pictures, Documents and Desktop, then opens the photo or shows it in its folder. Off until you turn it on in Settings.
+- **Open everyday apps:** Notepad, Calculator, Paint, File Explorer and Windows Settings, as well as the browser.
+- **Explain this error message:** the assistant can read the text and buttons of any open window when you ask (never password boxes) and explain it in plain words.
+- **Help me write an email:** the assistant can fill in the To, Subject and Message boxes on your webmail page. Sending always asks first, and the confirmation screen now shows what's filled in on the page (recipient, subject and message), so you can check before saying yes.
 
 - **Step-by-step progress:** the status line shows what's happening ("Opening youtube.com", "Typing 'Yeat' into 'Search'").
 - **Pause / Continue** a request while it's working.

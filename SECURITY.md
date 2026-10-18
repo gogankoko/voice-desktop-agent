@@ -64,6 +64,12 @@
 - The model sees file name, folder label, date and size, never full paths. `show_file`/`open_file` take a number from the latest search; Rust re-checks the file still exists and is inside a permitted folder (after resolving links) before acting.
 - `open_file` (Medium) only opens photos, documents, videos and music. Programs, scripts, shortcuts, installers, web pages and unknown types can only be shown in their folder.
 
+## Other windows and email (since 0.3)
+
+- `open_application` takes only a fixed list (browser, Notepad, Calculator, Paint, File Explorer, Settings), each started from a fixed Windows path with no arguments; the app checks its window came to the front.
+- `read_window` reads text and button names from one open window (by number from `list_open_windows`, or the front window other than this app) only when asked: never password boxes, at most 4,000 characters, sent to the model as untrusted text. It never clicks or types in that window.
+- Before any High-risk button press (e.g. Send), Rust reads the page's ordinary text boxes again and adds their current values (e.g. To, Subject, Message; never password or payment boxes; up to 6, each shortened to 600 characters) to the confirmation screen. What the person approves is what's on the page at that moment.
+
 ## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |

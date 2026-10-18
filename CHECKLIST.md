@@ -90,20 +90,25 @@
 - [ ] Continuous integration (GitHub Actions; uses Actions minutes, so it's the owner's decision)
 - [ ] Manual screen-reader pass with NVDA / Narrator
 
-## Phase 9: Beyond the browser (in progress)
+## Phase 9: Beyond the browser
 - [x] "Make everything bigger": Windows Magnifier via its own shortcuts (verified by the process), page zoom in the browser, and opening the right Windows Settings page for lasting changes (the assistant never changes Windows settings itself)
 - [x] Live: magnifier on then off, verified
 - [x] "Find the photo I downloaded yesterday": opt-in (off by default) name-only search of Downloads, Pictures, Documents and Desktop; newest first; full paths never leave Rust
 - [x] Open only photos, documents, videos and music; programs, scripts, shortcuts and web pages can only be shown in their folder
 - [x] Live (counts only, for privacy): search works on the real folders in ~30 ms
-- [ ] "Help me write an email" (webmail draft; sending through the confirmation screen)
-- [ ] "Explain this error message" (reading text from any window, not just the browser)
-- [ ] Opening other everyday apps beyond the browser
+- [x] "Help me write an email": the assistant fills in To, Subject and Message on a webmail page; Send always asks first, and the confirmation screen shows the recipient, subject and message read fresh from the page
+- [x] Live: pretend webmail (local page) typed To/Subject/Message, confirmation details showed all three, pretend Send (nothing sent)
+- [x] "Explain this error message": read the text and button names of any open window (never password boxes; up to 4,000 characters), only when asked
+- [x] Live: read a test error box and its OK/Close buttons
+- [x] Open everyday apps: Notepad, Calculator, Paint, File Explorer, Windows Settings (fixed list, no arguments)
+- [x] Live: Notepad and Calculator opened and verified
+- [ ] Not yet tried end-to-end with Gemini (the free-tier quota was used up during development): the email, error-message and app requests by voice
 
 ## Known limitations
 - Listening needs an Azure Speech key (docs/azure-speech-setup.md); understanding free-form requests needs a Gemini key (docs/gemini-setup.md).
-- Computer actions: open the browser, open https websites, read/scroll pages, follow links. No form filling, typing into pages or buttons yet.
-- Browser control relies on the browser's accessibility tree; the address bar is found by an English "Address" label, so non-English Windows/browsers may not verify navigation (it then says it couldn't confirm). The only computer action is opening the default browser, triggered by a few fixed typed phrases.
+- Computer actions: open a fixed list of everyday apps, open https websites, read/scroll pages, follow links, type into ordinary boxes and press buttons, read any window's text when asked, Magnifier/zoom/Settings pages, and (opt-in) find files by name. Without a Gemini key, only a few fixed typed phrases work (e.g. opening the browser).
+- Browser control relies on the browser's accessibility tree; the address bar is found by an English "Address" label, so non-English Windows/browsers may not verify navigation (it then says it couldn't confirm).
+- Typed text is one line, so an email message is written as one paragraph.
 - If the browser was already in front, verification can't tell a new window from the existing one.
 - The smoke test's typing step needs the app in the foreground (Windows foreground lock). Launching the app just before the test usually satisfies this.
 - The installer is unsigned, so Windows SmartScreen warns when it runs (signing needs a paid certificate).

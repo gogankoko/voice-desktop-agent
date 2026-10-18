@@ -106,6 +106,8 @@ fn is_cloaked(hwnd: HWND) -> bool {
 pub struct WindowSummary {
     pub title: String,
     pub app: String,
+    /// Kept in Rust to read the window later; never sent to the model.
+    pub hwnd: isize,
 }
 
 /// Plain name for a program, from its executable.
@@ -154,6 +156,7 @@ pub fn open_windows_except_self(max: usize) -> Vec<WindowSummary> {
         }
         out.push(WindowSummary {
             title,
+            hwnd: hwnd.0 as isize,
             app: friendly_app_name(process_image_path(pid).as_deref()),
         });
         if out.len() >= max {

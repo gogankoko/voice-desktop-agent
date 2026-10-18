@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pretend Webmail</title>
+  <style>
+    body { font-family: sans-serif; font-size: 20px; max-width: 36em; margin: 2em auto; }
+    label { display: block; margin-top: 1em; font-weight: bold; }
+    input, textarea { width: 100%; font-size: 1em; padding: 0.3em; }
+    button { font-size: 1em; padding: 0.4em 1em; margin-top: 1em; }
+  </style>
+</head>
+<body>
+  <h1>Pretend Webmail</h1>
+  <p>This is a test page for the Voice Desktop Agent. It is stored on this computer. Nothing here is real: no email is ever sent.</p>
+  <form onsubmit="return false">
+    <label for="to">To</label>
+    <input id="to" type="email" autocomplete="off">
+    <label for="subject">Subject</label>
+    <input id="subject" autocomplete="off">
+    <label for="body">Message</label>
+    <textarea id="body" rows="6"></textarea>
+    <button type="button" onclick="send()">Send</button>
+    <button type="button" onclick="discard()">Discard</button>
+  </form>
+  <p id="status" aria-live="polite">Draft not sent.</p>
+  <script>
+    function send() {
+      const to = document.getElementById('to').value;
+      document.getElementById('status').textContent = 'Pretend message sent to ' + to + '. Nothing was really sent.';
+    }
+    function discard() {
+      for (const id of ['to', 'subject', 'body']) document.getElementById(id).value = '';
+      document.getElementById('status').textContent = 'Draft discarded.';
+    }
+  </script>
+</body>
+</html>
