@@ -357,6 +357,7 @@ fn approval_runs_exactly_the_stored_call_once() {
         .find(|s| s["type"] == "function_result")
         .unwrap();
     assert_eq!(result["result"]["sent"], false);
+    assert_eq!(result["result"]["user_confirmed_on_screen"], true);
     // Single use: the same id can't approve again.
     assert!(block_on(state.confirm(&model, &desk, &id, true, |_| {})).is_err());
 }
@@ -375,6 +376,7 @@ fn declining_runs_nothing_and_tells_the_model() {
         .find(|s| s["type"] == "function_result")
         .unwrap();
     assert_eq!(result["result"]["declined"], true);
+    assert_eq!(result["result"]["user_confirmed_on_screen"], false);
 }
 
 #[test]

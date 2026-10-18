@@ -272,12 +272,22 @@ impl TaskRun {
         on_executing: &mut impl FnMut(&'static str),
     ) {
         let result = if approved {
-            self.execute(&pending.call, pending.validated, exec, on_executing)
-                .await
+            let mut r = self
+                .execute(&pending.call, pending.validated, exec, on_executing)
+                .await;
+            // Make it unambiguous that the confirmation already happened.
+            if let Some(obj) = r["result"].as_object_mut() {
+                obj.insert("user_confirmed_on_screen".into(), json!(true));
+            }
+            r
         } else {
             function_result(
                 &pending.call,
-                json!({ "declined": true, "note": "The user said no, so nothing was done. Acknowledge briefly; don't try again unless asked." }),
+                json!({
+                    "user_confirmed_on_screen": false,
+                    "declined": true,
+                    "outcome": "The user answered no on the confirmation screen, so nothing was done. Acknowledge briefly; don't try again unless asked."
+                }),
                 false,
             )
         };
@@ -339,7 +349,11 @@ impl TaskRun {
                 });
                 function_result(
                     call,
-                    json!({ "practice": true, "sent": false, "note": "Practice mode: nothing was actually sent. Tell the user this was only practice." }),
+                    json!({
+                        "practice": true,
+                        "sent": false,
+                        "outcome": "Finished. The confirmation step is already over. Because this is practice mode, nothing was really sent. Tell the user in one or two sentences that the practice message is done and that nothing was actually sent."
+                    }),
                     false,
                 )
             }

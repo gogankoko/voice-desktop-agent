@@ -121,9 +121,10 @@ pub fn declarations(practice: bool) -> Vec<Value> {
             "type": "function",
             "name": "practice_send_message",
             "description": "PRACTICE MODE ONLY. Pretends to send a message so the user can practise \
-                            approving an important action. Nothing is ever sent. The app will ask \
-                            the user to confirm before it runs. Use it when the user asks to send \
-                            a message or email to someone.",
+                            approving an important action. Nothing is ever sent. Use it when the \
+                            user asks to send a message or email to someone. The app itself shows \
+                            the user a confirmation screen before running it; you only get the \
+                            result after they have answered.",
             "parameters": {
                 "type": "object",
                 "properties": {
