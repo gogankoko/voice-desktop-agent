@@ -1,4 +1,4 @@
-//! Wake word: "Hey Nova" (or whatever the assistant is called) starts listening, like the
+//! Wake word: "Hey VoCare" (or whatever the assistant is called) starts listening, like the
 //! microphone button.
 //!
 //! Detection is done on this computer by Windows' own offline speech recognition, which only
@@ -33,15 +33,27 @@ static TX: OnceLock<Mutex<Sender<Msg>>> = OnceLock::new();
 static STATUS: Mutex<Option<WakeStatus>> = Mutex::new(None);
 
 /// The phrases that wake the assistant called `name`.
+/// A name written with a capital inside it ("VoCare") is also listened for as separate
+/// words ("vo care"), which Windows recognises more reliably for made-up names.
 pub fn phrases(name: &str) -> Vec<String> {
-    let n = name.trim().to_lowercase();
-    vec![
-        format!("hey {n}"),
-        format!("ok {n}"),
-        format!("okay {n}"),
-        format!("hi {n}"),
-        n,
-    ]
+    let mut spellings = vec![name.trim().to_lowercase()];
+    let mut split = String::new();
+    for (i, c) in name.trim().chars().enumerate() {
+        if i > 0 && c.is_uppercase() && !split.ends_with(' ') {
+            split.push(' ');
+        }
+        split.extend(c.to_lowercase());
+    }
+    if split != spellings[0] {
+        spellings.push(split);
+    }
+    let mut out = Vec::new();
+    for n in &spellings {
+        for greeting in ["hey ", "ok ", "okay ", "hi ", ""] {
+            out.push(format!("{greeting}{n}"));
+        }
+    }
+    out
 }
 
 pub fn status() -> WakeStatus {
@@ -273,7 +285,7 @@ mod imp {
 mod tests {
     use super::*;
 
-    /// AUDIBLE: listens for "Hey Nova" through the microphone while a Windows voice says it
+    /// AUDIBLE: listens for "Hey VoCare" through the microphone while a Windows voice says it
     /// through the speakers (needs speakers on and the microphone able to hear them).
     /// cargo test --manifest-path src-tauri/Cargo.toml live_wake -- --ignored --nocapture --test-threads=1
     #[test]
@@ -287,13 +299,13 @@ mod tests {
         }
         let (heard_tx, heard_rx) = mpsc::channel();
         let (tx, _rx) = mpsc::channel();
-        let running = imp::listen(&phrases("Nova"), tx, 1, move || {
+        let running = imp::listen(&phrases("VoCare"), tx, 1, move || {
             let _ = heard_tx.send(());
         })
         .expect("Windows speech recognition");
-        println!("listening for 'hey nova'");
+        println!("listening for 'hey vocare'");
         std::thread::sleep(Duration::from_secs(1));
-        for line in ["The weather is nice today.", "Hey Nova", "Hey Nova"] {
+        for line in ["The weather is nice today.", "Hey VoCare", "Hey VoCare"] {
             let _ = std::process::Command::new("powershell")
                 .args([
                     "-NoProfile",
@@ -313,15 +325,37 @@ mod tests {
             println!("not heard after: {line}");
         }
         running.stop();
-        panic!("never heard 'hey nova' (speakers may be off or the microphone can't hear them)");
+        panic!("never heard 'hey vocare' (speakers may be off or the microphone can't hear them)");
     }
 
     #[test]
     fn phrases_come_from_the_name() {
         assert_eq!(
-            phrases(" Nova "),
-            vec!["hey nova", "ok nova", "okay nova", "hi nova", "nova"]
+            phrases(" VoCare "),
+            vec![
+                "hey vocare",
+                "ok vocare",
+                "okay vocare",
+                "hi vocare",
+                "vocare",
+                "hey vo care",
+                "ok vo care",
+                "okay vo care",
+                "hi vo care",
+                "vo care",
+            ]
+        );
+        assert_eq!(
+            phrases("Jarvis"),
+            vec![
+                "hey jarvis",
+                "ok jarvis",
+                "okay jarvis",
+                "hi jarvis",
+                "jarvis"
+            ]
         );
         assert_eq!(phrases("Mister T")[0], "hey mister t");
+        assert_eq!(phrases("Mister T").len(), 5, "already separate words");
     }
 }
