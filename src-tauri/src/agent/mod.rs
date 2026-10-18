@@ -9,6 +9,7 @@
 //! that id can run the stored action, and only within `CONFIRMATION_TTL`.
 
 pub mod gemini;
+pub mod local;
 pub mod prompt;
 pub mod registry;
 

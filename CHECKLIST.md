@@ -126,6 +126,14 @@
 - [x] Live with real Gemini: reminder set, battery read, reminders listed
 - [ ] Reminders are kept only while the app is open (not saved to disk yet)
 
+## Phase 12: Built-in commands (instant, free, no AI)
+- [x] Short everyday requests are understood by the app itself before the AI: open ~35 popular sites (YouTube, Gmail, Google Maps, Netflix, Reddit...), the browser and everyday apps, any Start-menu app by its exact name (Spotify, Teams...), plain web addresses; pause/play, next/previous, volume, mute; timers and "remind me in N minutes to..."; listing reminders; battery/internet/disk; minimize/full screen/restore; magnifier on/off; undo; the time and date
+- [x] Anything more specific ("play Yeat on Spotify", "open YouTube and search...", "remind me at 5...") goes to the AI
+- [x] Built-in commands run through the same validated tool loop (checks, risk, progress, undo, log) as AI-chosen ones; none of them can need confirmation (tested)
+- [x] Work without a Gemini key; without one, other requests get a plain explanation
+- [x] Removed the old fixed-phrase path and its separate `open_application` app command
+- [x] Live in the real app: "what time is it" (0 ms in the backend), "how much battery" (6 ms), "open YouTube" (2.2 s, including confirming the page opened), none using the AI
+
 ## Known limitations
 - Listening needs an Azure Speech key (docs/azure-speech-setup.md); understanding free-form requests needs a Gemini key (docs/gemini-setup.md).
 - Computer actions: open everyday apps and (by name) any app in the Start menu, press buttons and type in app windows, media keys, open https websites, read/scroll pages, follow links, type into ordinary boxes and press buttons, read any window's text when asked, Magnifier/zoom/Settings pages, and (opt-in) find files by name. Without a Gemini key, only a few fixed typed phrases work (e.g. opening the browser).

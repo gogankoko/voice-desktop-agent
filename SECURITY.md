@@ -86,6 +86,12 @@
 - `manage_window` acts on a window from the latest `list_open_windows` (or the front window behind the assistant), never on this app's own window. Closing is High risk (confirmation shows the window title) and only sends the normal close request, so programs still ask to save. Switching/minimizing/resizing are Low.
 - `computer_status` is read-only (battery, internet connectivity flag, free space on the system drive).
 
+## Built-in commands (since 0.3)
+
+- Short fixed-shape requests are matched in Rust (`agent/local.rs`) and turned into ordinary tool calls that go through the same validation, risk levels, progress, undo and logging as AI-proposed calls. Only Low/Medium tools are reachable this way (tested); anything else goes to the AI.
+- Websites come from a fixed table of https addresses, or a plain address the person said, checked by the same `open_website` rules. Apps must match a Start-menu name exactly and still pass `open_installed_app`'s blocklist.
+- The frontend no longer has its own way to open apps: the `open_application` app command was removed, so every action goes through the agent.
+
 ## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |

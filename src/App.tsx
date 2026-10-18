@@ -2,9 +2,7 @@ import { type FormEvent, useEffect, useReducer, useRef, useState } from "react";
 import { type Phase, initialState, isActive, transition } from "./core/conversation/machine";
 import { type AgentTurnDeps, answerConfirmation, confirmationQuestion, runAgentRequest } from "./core/agentTurn";
 import { interpretAnswer } from "./core/consent";
-import { matchIntent } from "./core/intents";
 import { listenTurn } from "./core/listenTurn";
-import { runRequest } from "./core/runTask";
 import {
   type ActionReport,
   type ConfirmationRequest,
@@ -25,7 +23,6 @@ import {
   setPreferences,
   textSizeSchema,
 } from "./ipc/preferences";
-import { openApplication } from "./ipc/tools";
 import { AssistantSettings } from "./ui/AssistantSettings";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { Reader } from "./ui/Reader";
@@ -149,14 +146,10 @@ export default function App() {
 
   useEffect(() => {
     if (state.phase !== "understanding" || state.utterance === null) return;
+    // Always to the backend: built-in commands work without a Gemini key; anything else
+    // needs one, and the backend says so.
     const id = ++taskId.current;
-    const isCurrent = () => taskId.current === id;
-    if (assistantReady.current) {
-      void runAgentRequest(state.utterance, agentDeps(id));
-    } else {
-      // No assistant key: fixed phrases only, handled locally.
-      void runRequest(matchIntent(state.utterance), { dispatch, say, openApplication, isCurrent });
-    }
+    void runAgentRequest(state.utterance, agentDeps(id));
   }, [state.phase, state.utterance]);
 
   function agentDeps(id: number): AgentTurnDeps {
@@ -475,6 +468,10 @@ export default function App() {
             Things you can ask: "play Yeat on Spotify", "pause the music", "turn it up", "remind me
             in 20 minutes to take my pills", "switch to Notepad", "how much battery do I have?".
             Reminders only work while this app is open.
+          </p>
+          <p>
+            Simple commands work instantly, even without the AI: "open YouTube", "open Spotify",
+            "pause", "next song", "turn it up", "set a timer for 10 minutes", "what time is it?".
           </p>
           <p>
             The microphone is only on while the button says <strong>Listening</strong>. Press it

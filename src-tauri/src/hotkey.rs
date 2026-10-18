@@ -11,15 +11,31 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey, VK_A,
-    VK_SPACE, VK_V, VIRTUAL_KEY,
+    HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey, VIRTUAL_KEY,
+    VK_A, VK_SPACE, VK_V,
 };
 
 const CANDIDATES: [(&str, HOT_KEY_MODIFIERS, VIRTUAL_KEY); 4] = [
-    ("Ctrl+Alt+Space", HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0), VK_SPACE),
-    ("Ctrl+Alt+V", HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0), VK_V),
-    ("Ctrl+Shift+Space", HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_SHIFT.0), VK_SPACE),
-    ("Ctrl+Alt+A", HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0), VK_A),
+    (
+        "Ctrl+Alt+Space",
+        HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0),
+        VK_SPACE,
+    ),
+    (
+        "Ctrl+Alt+V",
+        HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0),
+        VK_V,
+    ),
+    (
+        "Ctrl+Shift+Space",
+        HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_SHIFT.0),
+        VK_SPACE,
+    ),
+    (
+        "Ctrl+Alt+A",
+        HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0),
+        VK_A,
+    ),
 ];
 
 static REGISTERED: OnceLock<Option<&'static str>> = OnceLock::new();

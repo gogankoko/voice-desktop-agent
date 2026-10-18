@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 /**
  * Whole-app tests in a simulated browser: accessibility (axe), keyboard safety of the
- * confirmation screen, and the offline request path. The Tauri backend is mocked.
+ * confirmation screen, and requests without an AI key. The Tauri backend is mocked.
  */
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+const NO_KEY =
+  'Without the AI set up, I can only do built-in things like "open YouTube". For anything else, add a Gemini key in Settings.';
 
 const backend: Record<string, unknown> = {
   get_app_status: {
@@ -29,6 +32,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (cmd: string) => {
     if (cmd in backend) return backend[cmd];
     if (cmd === "log_frontend_error") return null;
+    if (cmd === "run_agent") throw NO_KEY;
     throw `unexpected command ${cmd}`;
   }),
 }));
@@ -142,14 +146,14 @@ describe("confirmation screen", () => {
   });
 });
 
-describe("offline request path (no assistant key)", () => {
-  it("a typed request gets an honest reply in the conversation", async () => {
+describe("requests without an AI key", () => {
+  it("a request the app can't do by itself gets an honest reply in the conversation", async () => {
     await renderApp();
     await userEvent.type(screen.getByRole("textbox", { name: "Type a request" }), "hello there");
     await act(async () => {
       await userEvent.click(screen.getByRole("button", { name: "Send" }));
     });
-    expect(await screen.findByText(/I can only do a few things so far/)).toBeTruthy();
+    expect(await screen.findByText(/add a Gemini key in Settings/)).toBeTruthy();
   });
 
   it("Stop is always present and disabled when there's nothing to stop", async () => {
