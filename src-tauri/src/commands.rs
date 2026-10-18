@@ -143,7 +143,12 @@ pub async fn run_agent(
     task_id: u32,
     text: String,
 ) -> Result<AgentOutcome, String> {
-    let practice = prefs.load().map(|p| p.practice_mode).unwrap_or(false);
+    let loaded = prefs.load().ok();
+    let practice = loaded.as_ref().map(|p| p.practice_mode).unwrap_or(false);
+    state.files_enabled.store(
+        loaded.as_ref().map(|p| p.file_search).unwrap_or(false),
+        std::sync::atomic::Ordering::SeqCst,
+    );
     let model = gemini::Gemini::new(state.http.clone(), gemini_key()?, practice);
     let started = std::time::Instant::now();
     let result = state

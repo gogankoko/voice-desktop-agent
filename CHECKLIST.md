@@ -90,6 +90,16 @@
 - [ ] Continuous integration (GitHub Actions; uses Actions minutes, so it's the owner's decision)
 - [ ] Manual screen-reader pass with NVDA / Narrator
 
+## Phase 9: Beyond the browser (in progress)
+- [x] "Make everything bigger": Windows Magnifier via its own shortcuts (verified by the process), page zoom in the browser, and opening the right Windows Settings page for lasting changes (the assistant never changes Windows settings itself)
+- [x] Live: magnifier on then off, verified
+- [x] "Find the photo I downloaded yesterday": opt-in (off by default) name-only search of Downloads, Pictures, Documents and Desktop; newest first; full paths never leave Rust
+- [x] Open only photos, documents, videos and music; programs, scripts, shortcuts and web pages can only be shown in their folder
+- [x] Live (counts only, for privacy): search works on the real folders in ~30 ms
+- [ ] "Help me write an email" (webmail draft; sending through the confirmation screen)
+- [ ] "Explain this error message" (reading text from any window, not just the browser)
+- [ ] Opening other everyday apps beyond the browser
+
 ## Known limitations
 - Listening needs an Azure Speech key (docs/azure-speech-setup.md); understanding free-form requests needs a Gemini key (docs/gemini-setup.md).
 - Computer actions: open the browser, open https websites, read/scroll pages, follow links. No form filling, typing into pages or buttons yet.

@@ -8,6 +8,7 @@ export const preferencesSchema = z.strictObject({
   textSize: textSizeSchema,
   speakReplies: z.boolean(),
   practiceMode: z.boolean(),
+  fileSearch: z.boolean(),
 });
 
 export type TextSize = z.infer<typeof textSizeSchema>;

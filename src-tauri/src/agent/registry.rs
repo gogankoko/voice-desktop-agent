@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::tools::Risk;
+use crate::tools::browser::ZoomDirection;
+use crate::tools::files::{FileKind, When};
 use crate::tools::open_app::AllowedApp;
+use crate::tools::screen::{MagnifierAction, SettingsPage};
 use crate::tools::web_url::{SafeUrl, validate_url};
 
 const MAX_RECIPIENT_CHARS: usize = 100;
@@ -96,6 +99,23 @@ pub enum ValidatedCall {
     ListOpenWindows,
     ReadAloud,
     UndoLast,
+    Magnifier(MagnifierAction),
+    ZoomWebpage(ZoomDirection),
+    OpenSettingsPage(SettingsPage),
+    FindFiles {
+        kind: FileKind,
+        when: When,
+        name_contains: Option<String>,
+    },
+    /// `name` is filled in by the orchestrator from the latest find_files result.
+    ShowFile {
+        number: u32,
+        name: String,
+    },
+    OpenFile {
+        number: u32,
+        name: String,
+    },
     /// `label` is filled in by the orchestrator from the latest control list.
     PressButton {
         number: u32,
@@ -126,7 +146,16 @@ impl ValidatedCall {
             ValidatedCall::ListControls
             | ValidatedCall::ListOpenWindows
             | ValidatedCall::ReadAloud
-            | ValidatedCall::UndoLast => Risk::Low,
+            | ValidatedCall::UndoLast
+            // Temporary, reversible view changes; Settings pages only open (the person decides).
+            | ValidatedCall::Magnifier(_)
+            | ValidatedCall::ZoomWebpage(_)
+            | ValidatedCall::OpenSettingsPage(_)
+            // Names only / showing a file in its folder: nothing runs or changes.
+            | ValidatedCall::FindFiles { .. }
+            | ValidatedCall::ShowFile { .. } => Risk::Low,
+            // Opens an everyday file in its usual app (types are restricted).
+            ValidatedCall::OpenFile { .. } => Risk::Medium,
             ValidatedCall::PressButton { label, .. } => link_risk(label),
             // Filling in a box without submitting: reversible, announced in the transcript.
             ValidatedCall::TypeText { .. } => Risk::Medium,
@@ -147,6 +176,12 @@ impl ValidatedCall {
             ValidatedCall::ListOpenWindows => "list_open_windows",
             ValidatedCall::ReadAloud => "read_page_aloud",
             ValidatedCall::UndoLast => "undo_last_action",
+            ValidatedCall::Magnifier(_) => "screen_magnifier",
+            ValidatedCall::ZoomWebpage(_) => "zoom_webpage",
+            ValidatedCall::OpenSettingsPage(_) => "open_windows_settings",
+            ValidatedCall::FindFiles { .. } => "find_files",
+            ValidatedCall::ShowFile { .. } => "show_file",
+            ValidatedCall::OpenFile { .. } => "open_file",
             ValidatedCall::PressButton { .. } => "press_button",
             ValidatedCall::TypeText { .. } => "type_text",
             ValidatedCall::PracticeSendMessage { .. } => "practice_send_message",
@@ -172,6 +207,26 @@ impl ValidatedCall {
             ValidatedCall::ListOpenWindows => "Looking at which windows are open".into(),
             ValidatedCall::ReadAloud => "Getting the article ready to read aloud".into(),
             ValidatedCall::UndoLast => "Undoing the last thing I did".into(),
+            ValidatedCall::Magnifier(MagnifierAction::ZoomIn) => "Making the screen bigger".into(),
+            ValidatedCall::Magnifier(MagnifierAction::ZoomOut) => {
+                "Making the screen a bit smaller".into()
+            }
+            ValidatedCall::Magnifier(MagnifierAction::TurnOff) => {
+                "Turning the magnifier off".into()
+            }
+            ValidatedCall::ZoomWebpage(ZoomDirection::In) => "Making the page bigger".into(),
+            ValidatedCall::ZoomWebpage(ZoomDirection::Out) => "Making the page smaller".into(),
+            ValidatedCall::ZoomWebpage(ZoomDirection::Reset) => {
+                "Putting the page back to normal size".into()
+            }
+            ValidatedCall::OpenSettingsPage(p) => {
+                format!("Opening the {} settings", p.plain_name())
+            }
+            ValidatedCall::FindFiles { .. } => "Looking through your files".into(),
+            ValidatedCall::ShowFile { name, .. } => {
+                format!("Showing \u{201c}{name}\u{201d} in its folder")
+            }
+            ValidatedCall::OpenFile { name, .. } => format!("Opening \u{201c}{name}\u{201d}"),
             ValidatedCall::PressButton { label, .. } => format!("Pressing \u{201c}{label}\u{201d}"),
             ValidatedCall::TypeText { label, text, .. } => {
                 format!("Typing \u{201c}{text}\u{201d} into \u{201c}{label}\u{201d}")
@@ -192,6 +247,10 @@ impl ValidatedCall {
                 | ValidatedCall::ListLinks
                 | ValidatedCall::ListControls
                 | ValidatedCall::ListOpenWindows
+                // "Bigger... bigger still" is a normal request.
+                | ValidatedCall::Magnifier(_)
+                | ValidatedCall::ZoomWebpage(_)
+                | ValidatedCall::FindFiles { .. }
         )
     }
 }
@@ -261,6 +320,12 @@ pub fn confirmation_text(call: &ValidatedCall) -> ConfirmationText {
         | ValidatedCall::ListOpenWindows
         | ValidatedCall::ReadAloud
         | ValidatedCall::UndoLast
+        | ValidatedCall::Magnifier(_)
+        | ValidatedCall::ZoomWebpage(_)
+        | ValidatedCall::OpenSettingsPage(_)
+        | ValidatedCall::FindFiles { .. }
+        | ValidatedCall::ShowFile { .. }
+        | ValidatedCall::OpenFile { .. }
         | ValidatedCall::ReadWebpage
         | ValidatedCall::ScrollWebpage { .. }
         | ValidatedCall::ListLinks => ConfirmationText {
@@ -318,6 +383,33 @@ struct ScrollArgs {
 #[serde(deny_unknown_fields)]
 struct FollowLinkArgs {
     number: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FindFilesArgs {
+    kind: FileKind,
+    when: When,
+    #[serde(default)]
+    name_contains: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MagnifierArgs {
+    action: MagnifierAction,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ZoomArgs {
+    direction: ZoomDirection,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SettingsArgs {
+    page: SettingsPage,
 }
 
 #[derive(Deserialize)]
@@ -412,7 +504,69 @@ pub fn declarations(practice: bool) -> Vec<Value> {
         }),
         json!({
             "type": "function",
-            "name": "undo_last_action",
+            "name": "screen_magnifier",
+            "description": "Windows Magnifier, for making everything on the screen bigger: zoom_in turns it on or zooms further, zoom_out zooms back, turn_off returns the screen to normal. Use for 'make everything bigger / I can't see'.",
+            "parameters": {
+                "type": "object",
+                "properties": {"action": {"type": "string", "enum": ["zoom_in", "zoom_out", "turn_off"]}},
+                "required": ["action"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "zoom_webpage",
+            "description": "Makes the web page in the browser bigger or smaller (the browser's own zoom), or back to normal.",
+            "parameters": {
+                "type": "object",
+                "properties": {"direction": {"type": "string", "enum": ["in", "out", "reset"]}},
+                "required": ["direction"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "open_windows_settings",
+            "description": "Opens a Windows Settings page so the person can make a lasting change themselves: text_size (bigger text everywhere), display (scale of everything), magnifier, mouse_pointer (bigger pointer). Explain which slider or option to use.",
+            "parameters": {
+                "type": "object",
+                "properties": {"page": {"type": "string", "enum": ["text_size", "display", "magnifier", "mouse_pointer"]}},
+                "required": ["page"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "find_files",
+            "description": "Searches the person's Downloads, Pictures, Documents and Desktop folders by file NAME (never contents), newest first, up to 10 results. Only works if they turned on file search in Settings.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["photo", "document", "video", "music", "any"]},
+                    "when": {"type": "string", "enum": ["today", "yesterday", "this_week", "any"], "description": "When the file was saved or downloaded."},
+                    "name_contains": {"type": "string", "description": "Optional part of the file name, e.g. 'invoice'."}
+                },
+                "required": ["kind", "when"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "show_file",
+            "description": "Shows a file from the latest find_files result in File Explorer, selected in its folder. Nothing is opened or run.",
+            "parameters": {
+                "type": "object",
+                "properties": {"number": {"type": "integer"}},
+                "required": ["number"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "open_file",
+            "description": "Opens a photo, document, video or music file from the latest find_files result in its usual app. Other kinds of files (programs, scripts, shortcuts) are refused; use show_file for those.",
+            "parameters": {
+                "type": "object",
+                "properties": {"number": {"type": "integer"}},
+                "required": ["number"]
+            }
+        }),
+        json!({ "type": "function", "name": "undo_last_action",
             "description": "Undoes the most recent thing you did on the computer, if it can be undone safely: going back after a link or button opened a new page, or putting back what was in a box you typed into. If it can't be undone, the result says why; tell the person kindly. Use it when they say undo, go back, or that was wrong.",
             "parameters": {"type": "object", "properties": {}}
         }),
@@ -539,6 +693,37 @@ pub fn validate(name: &str, arguments: &Value, practice: bool) -> Result<Validat
                         .into(),
                 )
             }),
+        "screen_magnifier" => serde_json::from_value::<MagnifierArgs>(arguments.clone())
+            .map(|a| ValidatedCall::Magnifier(a.action))
+            .map_err(|_| Refusal("Invalid arguments. `action` must be zoom_in, zoom_out or turn_off.".into())),
+        "zoom_webpage" => serde_json::from_value::<ZoomArgs>(arguments.clone())
+            .map(|a| ValidatedCall::ZoomWebpage(a.direction))
+            .map_err(|_| Refusal("Invalid arguments. `direction` must be in, out or reset.".into())),
+        "open_windows_settings" => serde_json::from_value::<SettingsArgs>(arguments.clone())
+            .map(|a| ValidatedCall::OpenSettingsPage(a.page))
+            .map_err(|_| Refusal("Invalid arguments. `page` must be text_size, display, magnifier or mouse_pointer.".into())),
+        "find_files" => {
+            let a = serde_json::from_value::<FindFilesArgs>(arguments.clone()).map_err(|_| {
+                Refusal("Invalid arguments. Give `kind` and `when` from the lists, and optionally `name_contains`.".into())
+            })?;
+            let name_contains = match a.name_contains.map(|n| n.trim().to_string()) {
+                Some(n) if n.is_empty() => None,
+                Some(n) if n.chars().count() > 60 || n.chars().any(|c| c.is_control() || "\\/:*?\"<>|".contains(c)) => {
+                    return Err(Refusal("`name_contains` must be a short piece of a file name.".into()));
+                }
+                other => other,
+            };
+            Ok(ValidatedCall::FindFiles { kind: a.kind, when: a.when, name_contains })
+        }
+        "show_file" | "open_file" => {
+            let a = serde_json::from_value::<PressButtonArgs>(arguments.clone())
+                .map_err(|_| Refusal("Invalid arguments. Give exactly `number`, from find_files.".into()))?;
+            Ok(if name == "show_file" {
+                ValidatedCall::ShowFile { number: a.number, name: String::new() }
+            } else {
+                ValidatedCall::OpenFile { number: a.number, name: String::new() }
+            })
+        }
         "undo_last_action" => {
             serde_json::from_value::<NoArgs>(arguments.clone())
                 .map_err(|_| Refusal("This tool takes no arguments.".into()))?;
@@ -672,8 +857,8 @@ mod tests {
                 message: "Hello".into()
             })
         );
-        assert_eq!(declarations(false).len(), 12);
-        assert_eq!(declarations(true).len(), 13);
+        assert_eq!(declarations(false).len(), 18);
+        assert_eq!(declarations(true).len(), 19);
     }
 
     #[test]
@@ -849,6 +1034,71 @@ mod tests {
             .risk(),
             Risk::Medium
         );
+    }
+
+    #[test]
+    fn file_tools_validate_strictly() {
+        assert!(matches!(
+            validate(
+                "find_files",
+                &json!({"kind": "photo", "when": "yesterday"}),
+                false
+            ),
+            Ok(ValidatedCall::FindFiles {
+                kind: FileKind::Photo,
+                when: When::Yesterday,
+                name_contains: None
+            })
+        ));
+        for bad in [
+            json!({"kind": "photo"}),
+            json!({"kind": "executable", "when": "any"}),
+            json!({"kind": "any", "when": "any", "path": "C:\\Windows"}),
+            json!({"kind": "any", "when": "any", "name_contains": "..\\..\\secrets"}),
+            json!({"kind": "any", "when": "any", "name_contains": "*.exe"}),
+        ] {
+            assert!(validate("find_files", &bad, false).is_err(), "{bad}");
+        }
+        assert!(validate("open_file", &json!({"path": "C:\\x.exe"}), false).is_err());
+        assert_eq!(
+            ValidatedCall::OpenFile {
+                number: 1,
+                name: "a.pdf".into()
+            }
+            .risk(),
+            Risk::Medium
+        );
+    }
+
+    #[test]
+    fn screen_tools_validate_strictly() {
+        assert_eq!(
+            validate("screen_magnifier", &json!({"action": "zoom_in"}), false),
+            Ok(ValidatedCall::Magnifier(MagnifierAction::ZoomIn))
+        );
+        assert_eq!(
+            validate(
+                "open_windows_settings",
+                &json!({"page": "text_size"}),
+                false
+            ),
+            Ok(ValidatedCall::OpenSettingsPage(SettingsPage::TextSize))
+        );
+        for (name, bad) in [
+            (
+                "screen_magnifier",
+                json!({"action": "zoom_in", "level": 400}),
+            ),
+            ("screen_magnifier", json!({"action": "max"})),
+            ("zoom_webpage", json!({"direction": "sideways"})),
+            (
+                "open_windows_settings",
+                json!({"page": "ms-settings:privacy"}),
+            ),
+            ("open_windows_settings", json!({"page": "update"})),
+        ] {
+            assert!(validate(name, &bad, false).is_err(), "{name} {bad}");
+        }
     }
 
     #[test]
