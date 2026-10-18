@@ -2,7 +2,7 @@
 
 A Windows 11 desktop assistant you talk to like a phone call. It opens apps, reads the screen, and helps with everyday tasks, and it always asks before anything important.
 
-> **Status: Phase 4.** The app builds, installs and runs, with an accessible main screen and saved settings. Its first real computer action works: type **"open my browser"** and it opens your default browser and checks that it appeared. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
+> **Status: Phase 5.** Talk or type in your own words. Azure Speech listens, Google Gemini understands, Windows voices answer. The only computer action so far is opening your default browser, and the app checks that it worked. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
 
 ## Prerequisites (Windows 11 x64)
 
@@ -52,6 +52,10 @@ The first build downloads the NSIS tools from Tauri's GitHub releases (hash-veri
 ## Set up listening
 
 Talking to the assistant uses Microsoft Azure AI Speech (free F0 tier). See [docs/azure-speech-setup.md](docs/azure-speech-setup.md). Spoken replies use Windows' built-in voices and need no setup.
+
+## Set up understanding
+
+Understanding requests in your own words uses Google Gemini. See [docs/gemini-setup.md](docs/gemini-setup.md). Without a key the app still works with a few fixed phrases.
 
 ## Docs
 

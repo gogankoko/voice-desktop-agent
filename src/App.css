@@ -270,6 +270,11 @@ summary {
   gap: 0.75rem;
 }
 
+.msg-action {
+  font-style: italic;
+  color: var(--muted);
+}
+
 .msg-from {
   font-weight: 700;
 }

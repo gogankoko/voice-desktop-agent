@@ -10,11 +10,20 @@
 ## Tauri boundary (in force now)
 
 - No `opener`, `shell`, `fs`, `http` or `process` plugins.
-- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only), `get_preferences`, `set_preferences` (enum-typed, `deny_unknown_fields`), `get_speech_setup`, `save_azure_speech` (validated region and key, tested against Azure before storing, key never returned), `clear_azure_speech`, `get_speech_token` (10-minute Azure STS token, cached 9 minutes), `open_application` (enum allowlist: `default_browser` only; Rust resolves and validates the executable from the Windows https association and launches it without a shell or arguments; refuses non-low-risk apps until confirmations exist; one launch at a time).
+- App commands must be listed in `src-tauri/build.rs` **and** granted in `src-tauri/capabilities/default.json`. Currently granted: `get_app_status` (read-only), `get_preferences`, `set_preferences` (enum-typed, `deny_unknown_fields`), `get_speech_setup`, `save_azure_speech` (validated region and key, tested against Azure before storing, key never returned), `clear_azure_speech`, `get_speech_token` (10-minute Azure STS token, cached 9 minutes), `get_assistant_setup`, `save_gemini_key` (format-checked, tested with a free Google call, never returned), `clear_gemini_key`, `run_agent` (text ≤ 2000 chars, one task at a time), `cancel_agent`, `open_application` (enum allowlist: `default_browser` only; Rust resolves and validates the executable from the Windows https association and launches it without a shell or arguments; refuses non-low-risk apps until confirmations exist; one launch at a time).
 - CSP: `default-src 'self'`, no remote scripts, frames or form posts. Beyond IPC, `connect-src` allows only `wss://*.stt.speech.microsoft.com`. The Speech SDK's audio worklet is served from the app (`public/speech-processor.js`) instead of a `blob:` URL. Prototype freezing is on.
 - All IPC responses are validated with zod in `src/ipc/*`. Inputs to future commands are validated in Rust.
 
-## Action risk levels (enforced by the planned tool registry)
+## Reasoning model boundary (in force since Phase 5)
+
+- The model (Google Gemini) receives only: the user's words, the last 6 text turns, a fixed system instruction and the tool declarations. No screenshots, files or window titles.
+- Requests use `store: false`. History lives only in memory.
+- Every proposed tool call is untrusted. `agent/registry.rs` accepts it only if the tool name is known, the arguments deserialize into the exact typed shape (`deny_unknown_fields`, enum values only) and the risk is Low. Refusals go back to the model as errors and are never executed.
+- Bounded: at most 4 model calls and 60 s per request, identical actions deduplicated within a request, one request at a time, Stop cancels pending model calls and prevents further actions.
+- What the user is told happened comes from Rust's action reports (shown in the transcript), not from the model's text.
+- Free-tier Gemini requests may be used by Google to improve its products; docs/gemini-setup.md tells the owner to enable billing before real users.
+
+## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |
 |---|---|---|

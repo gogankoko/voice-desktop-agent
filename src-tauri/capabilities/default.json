@@ -14,6 +14,11 @@
     "allow-get-speech-setup",
     "allow-save-azure-speech",
     "allow-clear-azure-speech",
-    "allow-get-speech-token"
+    "allow-get-speech-token",
+    "allow-get-assistant-setup",
+    "allow-save-gemini-key",
+    "allow-clear-gemini-key",
+    "allow-run-agent",
+    "allow-cancel-agent"
   ]
 }

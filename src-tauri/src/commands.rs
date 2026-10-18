@@ -1,9 +1,13 @@
 //! Tauri command handlers. Each handler is a thin adapter: it validates input,
 //! delegates to a testable module, and returns a serialisable result.
 
-use tauri::State;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, State};
+
+use crate::agent::{AgentOutcome, AgentState, DesktopExecutor, gemini};
 
 use crate::prefs::{Preferences, PrefsStore};
+use crate::secrets;
 use crate::speech::{self, SpeechSetup, SpeechState, SpeechToken};
 use crate::status::{AppStatus, current_status};
 use crate::tools::open_app::{self, AllowedApp, OpenResult};
@@ -12,7 +16,7 @@ use crate::tools::open_app::{self, AllowedApp, OpenResult};
 /// never implies capabilities that do not exist yet.
 #[tauri::command]
 pub fn get_app_status() -> AppStatus {
-    current_status(speech::setup().configured)
+    current_status(speech::setup().configured, assistant_setup().configured)
 }
 
 #[tauri::command]
@@ -73,4 +77,90 @@ pub fn clear_azure_speech(state: State<'_, SpeechState>) -> Result<SpeechSetup, 
 #[tauri::command]
 pub async fn get_speech_token(state: State<'_, SpeechState>) -> Result<SpeechToken, String> {
     speech::token(&state).await
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantSetup {
+    pub configured: bool,
+    pub model: &'static str,
+}
+
+fn assistant_setup() -> AssistantSetup {
+    AssistantSetup {
+        configured: matches!(secrets::load_gemini_key(), Ok(Some(_))),
+        model: gemini::MODEL,
+    }
+}
+
+#[tauri::command]
+pub fn get_assistant_setup() -> AssistantSetup {
+    assistant_setup()
+}
+
+/// Tested against Google (a free metadata call) before storing; never returned.
+#[tauri::command]
+pub async fn save_gemini_key(
+    state: State<'_, AgentState>,
+    key: String,
+) -> Result<AssistantSetup, String> {
+    let key = gemini::normalise_key(&key)?;
+    gemini::test_key(&state.http, &key).await?;
+    secrets::save_gemini_key(&key).map_err(|e| {
+        eprintln!("gemini key write failed: {e}");
+        "The key works, but Windows couldn't store it safely.".to_string()
+    })?;
+    Ok(assistant_setup())
+}
+
+#[tauri::command]
+pub fn clear_gemini_key() -> Result<AssistantSetup, String> {
+    secrets::delete_gemini_key().map_err(|e| {
+        eprintln!("gemini key delete failed: {e}");
+        "I couldn't remove the assistant key.".to_string()
+    })?;
+    Ok(assistant_setup())
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentProgress {
+    task_id: u32,
+    stage: &'static str,
+    tool: &'static str,
+}
+
+/// Runs one request through the model and the validated tool registry.
+/// `task_id` is echoed in progress events so the UI can ignore stale ones.
+#[tauri::command]
+pub async fn run_agent(
+    app: AppHandle,
+    state: State<'_, AgentState>,
+    task_id: u32,
+    text: String,
+) -> Result<AgentOutcome, String> {
+    let key = secrets::load_gemini_key()
+        .map_err(|_| "I couldn't read the assistant settings.".to_string())?
+        .ok_or_else(|| {
+            "The assistant isn't set up yet. Add a Gemini key in Settings.".to_string()
+        })?;
+    let model = gemini::Gemini::new(state.http.clone(), key);
+    state
+        .run(&model, &DesktopExecutor, &text, |tool| {
+            let _ = app.emit(
+                "agent-progress",
+                AgentProgress {
+                    task_id,
+                    stage: "executing",
+                    tool,
+                },
+            );
+        })
+        .await
+}
+
+/// Stops the current request: no further model calls or tool actions start.
+#[tauri::command]
+pub fn cancel_agent(state: State<'_, AgentState>) {
+    state.cancel_current();
 }
