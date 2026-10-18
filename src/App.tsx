@@ -19,6 +19,7 @@ import {
   type Preferences,
   TEXT_SCALE,
   type TextSize,
+  type Voice,
   getPreferences,
   setPreferences,
   textSizeSchema,
@@ -33,7 +34,10 @@ import { MicIcon, WavesIcon } from "./ui/icons";
 import { PHASE_TEXT } from "./ui/phaseText";
 import { playChime } from "./voice/chime";
 import type { SpeechRecognizer } from "./voice/types";
+import { ReplyVoice, WebAudioPlayer } from "./voice/replyVoice";
 import { WindowsSynthesizer } from "./voice/windowsSynthesizer";
+import { speakNatural } from "./ipc/speech";
+import { logUiError } from "./ipc/diagnostics";
 import "./App.css";
 
 interface Message {
@@ -47,6 +51,18 @@ interface Message {
 const SPEAKER: Record<Message["from"], string> = { you: "You", assistant: "Assistant", action: "Action" };
 
 type View = "main" | "help" | "settings";
+
+const VOICE_LABEL: Record<Voice, string> = {
+  ava: "Ava (US)",
+  andrew: "Andrew (US)",
+  emma: "Emma (US)",
+  brian: "Brian (US)",
+  sonia: "Sonia (UK)",
+  ryan: "Ryan (UK)",
+  windows: "Windows voice (offline)",
+};
+
+const VOICES: Voice[] = ["ava", "andrew", "emma", "brian", "sonia", "ryan", "windows"];
 
 const TEXT_SIZE_LABEL: Record<TextSize, string> = {
   normal: "Normal",
@@ -81,6 +97,7 @@ export default function App() {
     speakReplies: true,
     practiceMode: false,
     fileSearch: false,
+    voice: "ava",
   });
   const [question, setQuestion] = useState<ConfirmationRequest | null>(null);
   const [answerHint, setAnswerHint] = useState<string | null>(null);
@@ -88,8 +105,16 @@ export default function App() {
   const [stepText, setStepText] = useState("");
   const [reading, setReading] = useState<{ title: string; text: string; key: number } | null>(null);
   const [prefsError, setPrefsError] = useState<string | null>(null);
-  const [synth] = useState(() => new WindowsSynthesizer());
-  const [voiceInstalled, setVoiceInstalled] = useState(synth.available);
+  // Replies: the chosen natural voice (Azure), falling back to the Windows voice. Long
+  // read-aloud articles always use the Windows voice, so they don't use up the free allowance.
+  const [windowsVoice] = useState(() => new WindowsSynthesizer());
+  const [synth] = useState(
+    () =>
+      new ReplyVoice(windowsVoice, speakNatural, new WebAudioPlayer(), Date.now, (why) =>
+        logUiError(`natural voice failed, using the Windows voice: ${why}`),
+      ),
+  );
+  const [voiceInstalled, setVoiceInstalled] = useState(windowsVoice.available);
   const nextId = useRef(1);
   // Incremented by Stop and by each new turn; work whose id is stale must not act or report.
   const taskId = useRef(0);
@@ -112,10 +137,14 @@ export default function App() {
     getPreferences()
       .then(setPrefs)
       .catch((e) => setPrefsError(errorText(e, "Your settings couldn't be loaded.")));
-    const onVoices = () => setVoiceInstalled(synth.available);
+    const onVoices = () => setVoiceInstalled(windowsVoice.available);
     globalThis.speechSynthesis?.addEventListener("voiceschanged", onVoices);
     return () => globalThis.speechSynthesis?.removeEventListener("voiceschanged", onVoices);
-  }, [synth]);
+  }, [windowsVoice]);
+
+  useEffect(() => {
+    synth.setVoice(prefs.voice, status?.speechRecognition === "available");
+  }, [synth, prefs.voice, status?.speechRecognition]);
 
   useEffect(() => {
     document.documentElement.style.setProperty("--text-scale", String(TEXT_SCALE[prefs.textSize]));
@@ -412,7 +441,7 @@ export default function App() {
               key={reading.key}
               title={reading.title}
               text={reading.text}
-              synth={synth}
+              synth={windowsVoice}
               onClose={() => setReading(null)}
             />
           )}
@@ -532,6 +561,33 @@ export default function App() {
             />
             Practice mode (try sending a pretend message; nothing is really sent)
           </label>
+          <fieldset className="choices">
+            <legend>Voice for replies</legend>
+            {VOICES.map((v) => (
+              <label key={v} className="choice">
+                <input
+                  type="radio"
+                  name="voice"
+                  value={v}
+                  checked={prefs.voice === v}
+                  onChange={() => changePrefs({ ...prefs, voice: v })}
+                />
+                {VOICE_LABEL[v]}
+              </label>
+            ))}
+            <button
+              type="button"
+              className="try-voice"
+              onClick={() => synth.preview(`Hello, I'm ${VOICE_LABEL[prefs.voice].split(" (")[0]}. This is how I'll sound.`, prefs.voice)}
+            >
+              <span aria-hidden="true">▶ </span>Try this voice
+            </button>
+          </fieldset>
+          <p className="hint-left">
+            {status?.speechRecognition === "available"
+              ? "Natural voices are made by Microsoft Azure: the text of each reply is sent to Microsoft. Long articles are always read with the Windows voice."
+              : "Natural voices need the Azure Speech key (set up Listening below). Until then, the Windows voice is used."}
+          </p>
           </section>
 
           <section className="speech-settings" aria-labelledby="files-heading">
@@ -563,7 +619,13 @@ export default function App() {
               <dt>Hearing you</dt>
               <dd>{AVAILABILITY_TEXT[status.speechRecognition]}</dd>
               <dt>Speaking to you</dt>
-              <dd>{voiceInstalled ? "Available (Windows voices)" : "No Windows voice found"}</dd>
+              <dd>
+                {prefs.voice !== "windows" && status.speechRecognition === "available"
+                  ? `Natural voice: ${VOICE_LABEL[prefs.voice]} (Azure), with the Windows voice as a backup`
+                  : voiceInstalled
+                    ? "Available (Windows voice)"
+                    : "No Windows voice found"}
+              </dd>
               <dt>Understanding requests</dt>
               <dd>{AVAILABILITY_TEXT[status.reasoningModel]}</dd>
               <dt>Controlling your computer</dt>

@@ -43,6 +43,7 @@ pub fn run() {
             commands::save_azure_speech,
             commands::clear_azure_speech,
             commands::get_speech_token,
+            commands::speak_natural,
             commands::get_assistant_setup,
             commands::save_gemini_key,
             commands::clear_gemini_key,

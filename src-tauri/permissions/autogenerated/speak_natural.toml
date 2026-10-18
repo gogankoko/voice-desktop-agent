@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-speak-natural"
+description = "Enables the speak_natural command without any pre-configured scope."
+commands.allow = ["speak_natural"]
+
+[[permission]]
+identifier = "deny-speak-natural"
+description = "Denies the speak_natural command without any pre-configured scope."
+commands.deny = ["speak_natural"]

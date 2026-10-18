@@ -92,6 +92,12 @@
 - Websites come from a fixed table of https addresses, or a plain address the person said, checked by the same `open_website` rules. Apps must match a Start-menu name exactly and still pass `open_installed_app`'s blocklist.
 - The frontend no longer has its own way to open apps: the `open_application` app command was removed, so every action goes through the agent.
 
+## Natural voice (since 0.3)
+
+- `speak_natural` takes the reply text and a voice from a fixed list (a Rust enum); Rust builds the SSML with the text XML-escaped, so text can only be spoken and can never change the voice or add markup. Text is limited to 3,000 characters, audio to 8 MB.
+- The Azure key never leaves Rust; requests use the same short-lived token as listening and go only to `https://<region>.tts.speech.microsoft.com`. The window receives MP3 bytes and plays them with Web Audio, so the content security policy is unchanged.
+- The log records only lengths (characters, bytes) and HTTP status codes, never the text.
+
 ## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |

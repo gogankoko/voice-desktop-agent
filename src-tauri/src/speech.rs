@@ -219,9 +219,145 @@ pub async fn token(state: &SpeechState) -> Result<SpeechToken, String> {
     })
 }
 
+/// The longest reply sent for natural speech.
+pub const MAX_TTS_CHARS: usize = 3000;
+const MAX_AUDIO_BYTES: usize = 8 * 1024 * 1024;
+
+fn tts_url(region: &str) -> String {
+    format!("https://{region}.tts.speech.microsoft.com/cognitiveservices/v1")
+}
+
+fn xml_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            c if c.is_control() => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// The SSML request: one fixed, allowlisted voice; the text is escaped, so it can only ever
+/// be spoken, never change the voice or add markup.
+pub fn ssml(text: &str, voice_name: &str) -> String {
+    let lang = &voice_name[..5];
+    format!(
+        "<speak version='1.0' xml:lang='{lang}'><voice name='{voice_name}'><prosody rate='-4%'>{}</prosody></voice></speak>",
+        xml_escape(text)
+    )
+}
+
+/// Turns a reply into natural speech with Azure (MP3 audio). The key stays here; the text
+/// goes to Microsoft. Nothing about the text is logged.
+pub async fn synthesize(
+    state: &SpeechState,
+    text: &str,
+    voice: crate::prefs::Voice,
+) -> Result<Vec<u8>, String> {
+    let voice_name = voice
+        .azure_name()
+        .ok_or_else(|| "That's the Windows voice, not a natural voice.".to_string())?;
+    let text = text.trim();
+    if text.is_empty() || text.chars().count() > MAX_TTS_CHARS {
+        return Err("That text is empty or too long for the natural voice.".into());
+    }
+    let t = token(state).await?;
+    let resp = state
+        .client
+        .post(tts_url(&t.region))
+        .bearer_auth(&t.token)
+        .header("Content-Type", "application/ssml+xml")
+        .header(
+            "X-Microsoft-OutputFormat",
+            "audio-24khz-48kbitrate-mono-mp3",
+        )
+        .header("User-Agent", "VoiceDesktopAgent")
+        .body(ssml(text, voice_name))
+        .send()
+        .await
+        .map_err(|e| {
+            crate::diag::log("speech", format!("tts request failed: {}", e.without_url()));
+            "I couldn't reach Microsoft's voice service.".to_string()
+        })?;
+    let status = resp.status();
+    if !status.is_success() {
+        crate::diag::log("speech", format!("tts returned HTTP {}", status.as_u16()));
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            state.clear_cache();
+        }
+        return Err(if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            "The natural voice is busy or this month's free allowance is used up.".into()
+        } else {
+            format!(
+                "Microsoft's voice service returned an error (code {}).",
+                status.as_u16()
+            )
+        });
+    }
+    let audio = resp
+        .bytes()
+        .await
+        .map_err(|_| "The voice service sent unreadable audio.".to_string())?;
+    if audio.is_empty() || audio.len() > MAX_AUDIO_BYTES {
+        return Err("The voice service sent unexpected audio.".into());
+    }
+    crate::diag::log(
+        "speech",
+        format!(
+            "natural voice: {} characters -> {} bytes",
+            text.chars().count(),
+            audio.len()
+        ),
+    );
+    Ok(audio.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ssml_escapes_text_and_keeps_the_voice_fixed() {
+        let s = ssml(
+            "Tom & Jerry say <voice name='x'>hi</voice> \"ok\"",
+            "en-US-AvaMultilingualNeural",
+        );
+        assert_eq!(
+            s,
+            "<speak version='1.0' xml:lang='en-US'><voice name='en-US-AvaMultilingualNeural'><prosody rate='-4%'>Tom &amp; Jerry say &lt;voice name=&apos;x&apos;&gt;hi&lt;/voice&gt; &quot;ok&quot;</prosody></voice></speak>"
+        );
+        assert_eq!(s.matches("<voice").count(), 1);
+    }
+
+    #[test]
+    fn tts_url_stays_on_microsoft_domain() {
+        assert_eq!(
+            tts_url("eastus"),
+            "https://eastus.tts.speech.microsoft.com/cognitiveservices/v1"
+        );
+    }
+
+    /// Live: plays nothing; checks Azure returns MP3 audio for a short sentence.
+    /// cargo test --manifest-path src-tauri/Cargo.toml live_tts -- --ignored --nocapture
+    #[test]
+    #[ignore = "calls Azure (uses a few characters of the free allowance)"]
+    fn live_tts() {
+        let state = SpeechState::new();
+        let audio = tauri::async_runtime::block_on(synthesize(
+            &state,
+            "Hello! This is the natural voice.",
+            crate::prefs::Voice::Ava,
+        ))
+        .unwrap();
+        println!("{} bytes, starts {:02x?}", audio.len(), &audio[..4]);
+        assert!(audio.len() > 1000);
+    }
 
     #[test]
     fn regions_are_normalised_and_restricted() {

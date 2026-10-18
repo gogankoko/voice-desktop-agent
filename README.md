@@ -43,6 +43,8 @@ cargo test --manifest-path src-tauri/Cargo.toml live_spotify_controls -- --ignor
 powershell -ExecutionPolicy Bypass -File scripts/smoke-helpers.ps1
 # Built-in commands, no AI (VISIBLE: opens YouTube):
 powershell -ExecutionPolicy Bypass -File scripts/smoke-built-in.ps1
+# Natural voice: Azure returns audio for the stored key (nothing is played):
+cargo test --manifest-path src-tauri/Cargo.toml live_tts -- --ignored --nocapture
 # Confirmation gate in Practice mode (needs a Gemini key; launches the app itself; nothing is sent):
 powershell -ExecutionPolicy Bypass -File scripts/smoke-confirm.ps1
 # Sends a deliberately FAKE key to Microsoft and checks it is rejected and not stored:

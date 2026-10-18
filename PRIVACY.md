@@ -6,7 +6,7 @@ This app is built so that you can tell exactly what leaves your computer and whe
 
 | What | Where | How long | How to remove |
 |---|---|---|---|
-| Settings (text size, read replies aloud, practice mode) | `%APPDATA%\com.voiceagent.desktop\voice-agent.db` | Until changed | Uninstall, or delete the file |
+| Settings (text size, read replies aloud, voice, practice mode, file search) | `%APPDATA%\com.voiceagent.desktop\voice-agent.db` | Until changed | Uninstall, or delete the file |
 | Azure Speech key and region | Windows Credential Manager, `VoiceDesktopAgent/AzureSpeech` | Until removed | Settings → Listening → Remove key |
 | Gemini key | Windows Credential Manager, `VoiceDesktopAgent/Gemini` | Until removed | Settings → Understanding → Remove key |
 | Technical log (errors, status codes, which tools ran, timings) | `%APPDATA%\com.voiceagent.desktop\logs\diagnostics.log` (max ~256 KB + one older file) | Rolls over by size | Help → Clear them |
@@ -20,6 +20,10 @@ This app is built so that you can tell exactly what leaves your computer and whe
 - Your microphone audio, only while the microphone button says **Listening**.
 - Used to turn speech into text. This app does not record or keep the audio.
 - See Microsoft's data, privacy and security documentation for Azure AI Speech.
+
+## Sent to Microsoft for the natural voice: only when a natural voice is chosen
+
+- The text of each reply that is read aloud (not your voice, not article text: long articles use the Windows voice). Choose "Windows voice (offline)" in Settings to keep replies on this computer.
 
 ## Sent to Google (Gemini): only when you make a request the app can't do by itself
 

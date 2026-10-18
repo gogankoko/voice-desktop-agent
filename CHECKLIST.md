@@ -134,6 +134,13 @@
 - [x] Removed the old fixed-phrase path and its separate `open_application` app command
 - [x] Live in the real app: "what time is it" (0 ms in the backend), "how much battery" (6 ms), "open YouTube" (2.2 s, including confirming the page opened), none using the AI
 
+## Natural voice
+- [x] Replies read aloud with a natural Azure neural voice (Ava, Andrew, Emma, Brian, Sonia, Ryan) using the existing Azure Speech key; the Windows voice remains as a choice
+- [x] The key stays in Rust: Rust asks Azure for MP3 audio and hands only the audio to the window (no network or media rule changes in the app's content security policy)
+- [x] Falls back to the Windows voice automatically (offline, quota, any error) for a minute, so replies are never silent; Stop / Esc / the microphone silence it at once
+- [x] "Try this voice" in Settings; long read-aloud articles keep the Windows voice so they don't use up the free allowance
+- [x] Live: Azure returned MP3 audio for the stored key; in the real app replies were spoken with the natural voice (16-21 KB of audio per short reply) with no fallback logged
+
 ## Known limitations
 - Listening needs an Azure Speech key (docs/azure-speech-setup.md); understanding free-form requests needs a Gemini key (docs/gemini-setup.md).
 - Computer actions: open everyday apps and (by name) any app in the Start menu, press buttons and type in app windows, media keys, open https websites, read/scroll pages, follow links, type into ordinary boxes and press buttons, read any window's text when asked, Magnifier/zoom/Settings pages, and (opt-in) find files by name. Without a Gemini key, only a few fixed typed phrases work (e.g. opening the browser).
