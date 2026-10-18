@@ -15,7 +15,7 @@
 - [x] Text-size preference persisted in SQLite (`prefs.rs`), verified across restart (`scripts/smoke-prefs.ps1`)
 - [x] Text size uses radio buttons (all options visible, drivable via UIA SelectionItem)
 - [x] `.gitattributes` for consistent line endings
-- [ ] Component tests (jsdom + Testing Library), moved to Phase 8 hardening
+- [x] Component tests (jsdom + Testing Library, axe): done in Phase 8
 
 ## Phase 3: Voice interface ✅
 - [x] Provider review (2026-10-18): Windows built-in speech recognition needs MSIX package identity, so it's not usable with our installer. Owner chose **Azure AI Speech** (F0 free tier), English
@@ -35,7 +35,7 @@
 - [x] Verification: the launched program's window must reach the foreground within 8 s; otherwise the app says it couldn't confirm
 - [x] Fixed-phrase recogniser for typed requests (temporary until Phase 5) and a task runner that stays honest after Stop
 - [x] Real desktop test: `scripts/smoke-open-browser.ps1` opened Edge, verified by the app and independently
-- [ ] Foreground-window check enforced in Rust before any input simulation (lands with `type_text`)
+- [x] Foreground-window check enforced in Rust before any input simulation (`type_into_field`)
 - [ ] `get_active_window` exposed as an agent tool (internal only for now; the orchestrator arrives in Phase 5)
 
 ## Phase 5: Voice-to-computer with a reasoning model ✅
