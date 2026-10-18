@@ -33,6 +33,7 @@ pub fn run() {
             commands::clear_gemini_key,
             commands::run_agent,
             commands::cancel_agent,
+            commands::confirm_agent,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -77,6 +77,9 @@ pub trait ChatModel {
         &self,
         input: &[Value],
     ) -> impl Future<Output = Result<ModelTurn, ModelError>> + Send;
+
+    /// The model currently in use (it can change once, via fallback, at the start of a request).
+    fn model_id(&self) -> &'static str;
 }
 
 /// One `Gemini` per user request: once a request falls back to another model, it stays
@@ -85,14 +88,22 @@ pub struct Gemini {
     http: reqwest::Client,
     key: String,
     model: Mutex<&'static str>,
+    /// Practice mode: the pretend high-risk tool is offered to the model.
+    practice: bool,
 }
 
 impl Gemini {
-    pub fn new(http: reqwest::Client, key: String) -> Self {
+    pub fn new(http: reqwest::Client, key: String, practice: bool) -> Self {
+        Self::resume(http, key, practice, MODEL)
+    }
+
+    /// Continues a paused request on the model that produced its steps.
+    pub fn resume(http: reqwest::Client, key: String, practice: bool, model: &'static str) -> Self {
         Self {
             http,
             key,
-            model: Mutex::new(MODEL),
+            model: Mutex::new(model),
+            practice,
         }
     }
 
@@ -103,7 +114,7 @@ impl Gemini {
             .header("x-goog-api-key", &self.key)
             .timeout(REQUEST_TIMEOUT)
             .header("Content-Type", "application/json")
-            .body(request_body(model, input).to_string())
+            .body(request_body(model, input, self.practice).to_string())
             .send()
             .await
             .map_err(|e| {
@@ -170,12 +181,12 @@ where
     (result, current)
 }
 
-pub fn request_body(model: &str, input: &[Value]) -> Value {
+pub fn request_body(model: &str, input: &[Value], practice: bool) -> Value {
     json!({
         "model": model,
         "input": input,
         "system_instruction": SYSTEM_INSTRUCTION,
-        "tools": registry::declarations(),
+        "tools": registry::declarations(practice),
         "store": false,
         "generation_config": {
             "thinking_level": "low",
@@ -194,6 +205,10 @@ impl ChatModel for Gemini {
             *self.model.lock().expect("model lock") = used;
         }
         result
+    }
+
+    fn model_id(&self) -> &'static str {
+        *self.model.lock().expect("model lock")
     }
 }
 
@@ -362,6 +377,7 @@ mod tests {
         let body = request_body(
             MODEL,
             &[json!({"type": "user_input", "content": [{"type": "text", "text": "hi"}]})],
+            false,
         );
         assert_eq!(body["store"], false);
         assert_eq!(body["model"], MODEL);
@@ -518,7 +534,7 @@ mod tests {
             .expect("a Gemini key is stored");
         let http = reqwest::Client::new();
         let user = json!([{"type": "user_input", "content": [{"type": "text", "text": "Say hello in five words."}]}]);
-        let full = request_body(MODEL, user.as_array().unwrap());
+        let full = request_body(MODEL, user.as_array().unwrap(), false);
         let mut variants: Vec<(&str, Value)> = vec![
             (
                 "minimal (model + string input)",
@@ -538,7 +554,7 @@ mod tests {
             ),
             (
                 "+ tools",
-                json!({"model": MODEL, "input": user, "store": false, "tools": registry::declarations()}),
+                json!({"model": MODEL, "input": user, "store": false, "tools": registry::declarations(false)}),
             ),
             (
                 "+ generation_config",
@@ -548,7 +564,7 @@ mod tests {
         variants.push(("full app request", full));
         variants.push((
             "full request on fallback model",
-            request_body(FALLBACK_MODEL, user.as_array().unwrap()),
+            request_body(FALLBACK_MODEL, user.as_array().unwrap(), false),
         ));
         tauri::async_runtime::block_on(async {
             for (label, body) in variants {

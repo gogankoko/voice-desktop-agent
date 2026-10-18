@@ -15,6 +15,7 @@ fn main() {
         "clear_gemini_key",
         "run_agent",
         "cancel_agent",
+        "confirm_agent",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("failed to run tauri-build");
