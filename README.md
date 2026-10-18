@@ -2,7 +2,7 @@
 
 A Windows 11 desktop assistant you talk to like a phone call. It opens apps, reads the screen, and helps with everyday tasks, and it always asks before anything important.
 
-> **Status: Phase 7.** Talk or type in your own words. Azure Speech listens, Google Gemini understands, Windows voices answer. It can open your browser and websites, read a page, scroll, and follow links, checking each step. Anything risky shows a confirmation screen first. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
+> **Status: Phase 7.** Talk or type in your own words. Azure Speech listens, Google Gemini understands, Windows voices answer. It can open your browser and websites, read a page, scroll, follow links, search and fill in ordinary boxes, and press buttons, checking each step. Anything risky shows a confirmation screen first. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
 
 ## Prerequisites (Windows 11 x64)
 
@@ -33,6 +33,8 @@ eleaseoice-desktop-agent.exe
 powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1          # UI, IPC, typed request (no side effects)
 # VISIBLE SIDE EFFECT, opens your default browser:
 powershell -ExecutionPolicy Bypass -File scripts/smoke-open-browser.ps1
+# Pretend shop end-to-end: search, add to basket, checkout asks first (VISIBLE: opens a local page, types into it):
+powershell -ExecutionPolicy Bypass -File scripts/smoke-shop.ps1
 # Confirmation gate in Practice mode (needs a Gemini key; launches the app itself; nothing is sent):
 powershell -ExecutionPolicy Bypass -File scripts/smoke-confirm.ps1
 # Sends a deliberately FAKE key to Microsoft and checks it is rejected and not stored:

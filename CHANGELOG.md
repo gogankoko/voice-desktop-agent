@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Web pages: buttons and typing.** The assistant can search on websites and fill in ordinary boxes ("search this shop for milk", "add milk to the basket"). It types only after confirming the right box in the front browser window has the cursor, never presses Enter, and never types into password or payment boxes. Checkout, pay, place order, sign up and similar buttons ask for confirmation first.
+- Requests may now take up to 8 assistant steps / 120 seconds for multi-step tasks.
+
 ## 0.2.0 (2026-10-18)
 
 First version that can be talked to in your own words and act in the browser.
