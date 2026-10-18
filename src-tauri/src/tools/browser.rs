@@ -27,7 +27,7 @@ use windows::Win32::UI::Accessibility::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP,
-    KEYEVENTF_UNICODE, SendInput, VIRTUAL_KEY, VK_CONTROL, VK_DELETE,
+    KEYEVENTF_UNICODE, SendInput, VIRTUAL_KEY, VK_CONTROL, VK_DELETE, VK_OEM_MINUS, VK_OEM_PLUS,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
@@ -748,6 +748,44 @@ pub fn go_back(
         verified: false,
         address: after,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ZoomDirection {
+    In,
+    Out,
+    Reset,
+}
+
+/// The browser's own page zoom (Ctrl + Plus / Minus / 0). Sent only when the browser is
+/// verifiably the foreground window, like typing.
+pub fn zoom_page(exe: &Path, direction: ZoomDirection) -> Result<(), String> {
+    const VK_0: VIRTUAL_KEY = VIRTUAL_KEY(0x30);
+    let b = Browser::find(exe)?;
+    unsafe {
+        let _ = SetForegroundWindow(b.hwnd);
+    }
+    std::thread::sleep(Duration::from_millis(250));
+    if unsafe { GetForegroundWindow() } != b.hwnd {
+        return Err("I couldn't bring the browser to the front (another window may be in front), so I didn't change anything. Click on the browser window and ask me again.".into());
+    }
+    let vk = match direction {
+        ZoomDirection::In => VK_OEM_PLUS,
+        ZoomDirection::Out => VK_OEM_MINUS,
+        ZoomDirection::Reset => VK_0,
+    };
+    let inputs = [
+        key(VK_CONTROL, false),
+        key(vk, false),
+        key(vk, true),
+        key(VK_CONTROL, true),
+    ];
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    if sent as usize != inputs.len() {
+        return Err("Windows blocked the zoom keys.".into());
+    }
+    Ok(())
 }
 
 /// Types `text` into an observed text box, replacing what's there.

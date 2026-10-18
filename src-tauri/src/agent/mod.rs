@@ -23,10 +23,12 @@ use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 use crate::tools::Risk;
+use crate::tools::browser::ZoomDirection;
 use crate::tools::browser::{
     ControlKind, ControlRef, LinkRef, NavigationResult, PageText, PressResult, TypeResult,
 };
 use crate::tools::open_app::{AllowedApp, OpenResult};
+use crate::tools::screen::{MagnifierAction, MagnifierResult, SettingsPage};
 use crate::tools::web_url::SafeUrl;
 use gemini::{ChatModel, ModelError, ProposedCall};
 use registry::{ConfirmationText, Refusal, ValidatedCall};
@@ -154,6 +156,18 @@ pub trait ToolExecutor {
         &self,
     ) -> impl Future<Output = Result<Vec<crate::tools::win::WindowSummary>, String>> + Send;
     fn read_article(&self) -> impl Future<Output = Result<PageText, String>> + Send;
+    fn magnifier(
+        &self,
+        action: MagnifierAction,
+    ) -> impl Future<Output = Result<MagnifierResult, String>> + Send;
+    fn zoom_page(
+        &self,
+        direction: ZoomDirection,
+    ) -> impl Future<Output = Result<(), String>> + Send;
+    fn open_settings(
+        &self,
+        page: SettingsPage,
+    ) -> impl Future<Output = Result<bool, String>> + Send;
     fn go_back(
         &self,
         expected_current: Option<String>,
@@ -219,6 +233,15 @@ impl ToolExecutor for DesktopExecutor {
             )
         })
         .await
+    }
+    async fn magnifier(&self, action: MagnifierAction) -> Result<MagnifierResult, String> {
+        blocking(move || crate::tools::screen::magnifier(action)).await
+    }
+    async fn zoom_page(&self, direction: ZoomDirection) -> Result<(), String> {
+        blocking(move || crate::tools::browser::zoom_page(&browser_exe()?, direction)).await
+    }
+    async fn open_settings(&self, page: SettingsPage) -> Result<bool, String> {
+        blocking(move || crate::tools::screen::open_settings_page(page)).await
     }
     async fn read_article(&self) -> Result<PageText, String> {
         blocking(|| crate::tools::browser::read_article(&browser_exe()?)).await
@@ -748,6 +771,78 @@ impl TaskRun {
                     }
                 }
             }
+            ValidatedCall::Magnifier(action) => match exec.magnifier(action).await {
+                Ok(r) => {
+                    let summary = match (action, r.verified) {
+                        (MagnifierAction::TurnOff, true) => "Turned the magnifier off (checked)".to_string(),
+                        (MagnifierAction::TurnOff, false) => "Asked Windows to turn the magnifier off, but it still seems to be on".to_string(),
+                        (MagnifierAction::ZoomIn, true) => "Made the screen bigger with the Windows magnifier (checked it's on)".to_string(),
+                        (MagnifierAction::ZoomOut, _) => "Zoomed the magnifier out a step".to_string(),
+                        (MagnifierAction::ZoomIn, false) => "Asked Windows to magnify the screen, but couldn't confirm the magnifier started".to_string(),
+                    };
+                    self.report("screen_magnifier", true, r.verified, summary);
+                    if action == MagnifierAction::ZoomIn {
+                        self.undo_log.push(UndoEntry::NotUndoable {
+                            what: "made the screen bigger with the magnifier".into(),
+                            why: "Say 'turn the magnifier off' to go back to normal, or press the Windows key and Esc together.".into(),
+                        });
+                    }
+                    function_result(
+                        call,
+                        json!({
+                            "verified": r.verified,
+                            "magnifier_on": r.running,
+                            "tip": "The person can also press the Windows key with plus or minus to zoom, and the Windows key with Esc to turn it off."
+                        }),
+                        false,
+                    )
+                }
+                Err(why) => {
+                    self.report("screen_magnifier", false, false, why.clone());
+                    function_result(call, json!({ "error": why }), true)
+                }
+            },
+            ValidatedCall::ZoomWebpage(direction) => match exec.zoom_page(direction).await {
+                Ok(()) => {
+                    let summary = match direction {
+                        ZoomDirection::In => "Made the web page bigger",
+                        ZoomDirection::Out => "Made the web page smaller",
+                        ZoomDirection::Reset => "Put the web page back to normal size",
+                    };
+                    self.report("zoom_webpage", true, true, summary.into());
+                    function_result(call, json!({ "zoomed": true }), false)
+                }
+                Err(why) => {
+                    self.report("zoom_webpage", false, false, why.clone());
+                    function_result(call, json!({ "error": why }), true)
+                }
+            },
+            ValidatedCall::OpenSettingsPage(page) => match exec.open_settings(page).await {
+                Ok(opened) => {
+                    let summary = if opened {
+                        format!("Opened Windows Settings: {} (checked)", page.plain_name())
+                    } else {
+                        format!(
+                            "Asked Windows to open Settings: {}, but couldn't confirm it opened",
+                            page.plain_name()
+                        )
+                    };
+                    self.report("open_windows_settings", true, opened, summary);
+                    function_result(
+                        call,
+                        json!({
+                            "opened": opened,
+                            "page": page.plain_name(),
+                            "note": "The person makes the change themselves. Explain briefly what to do on this page, e.g. drag the Text size slider to the right and press Apply."
+                        }),
+                        false,
+                    )
+                }
+                Err(why) => {
+                    self.report("open_windows_settings", false, false, why.clone());
+                    function_result(call, json!({ "error": why }), true)
+                }
+            },
             ValidatedCall::UndoLast => {
                 let (entry, from_this_request) = match self.undo_log.last() {
                     Some(e) => (Some(e.clone()), true),

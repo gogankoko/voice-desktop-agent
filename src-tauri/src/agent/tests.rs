@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 
 use super::gemini::{ChatModel, ModelError, ModelTurn, ProposedCall};
 use super::*;
+use crate::tools::browser::ZoomDirection;
+use crate::tools::screen::{MagnifierAction, MagnifierResult, SettingsPage};
 
 /// Replays scripted turns and records every input it was sent.
 struct ScriptedModel {
@@ -63,6 +65,7 @@ struct FakeDesktop {
     pressed: Mutex<Vec<String>>,
     typed: Mutex<Vec<(String, String)>>,
     backs: Mutex<Vec<(Option<String>, Option<String>)>>,
+    screen: Mutex<Vec<String>>,
 }
 
 const PAGE_LINKS: [&str; 3] = ["Go to the second page", "Delete my account", "News"];
@@ -123,6 +126,27 @@ impl ToolExecutor for FakeDesktop {
             verified: true,
             address: expected_previous,
         })
+    }
+    async fn magnifier(&self, action: MagnifierAction) -> Result<MagnifierResult, String> {
+        self.screen.lock().unwrap().push(format!("{action:?}"));
+        Ok(MagnifierResult {
+            running: action != MagnifierAction::TurnOff,
+            verified: true,
+        })
+    }
+    async fn zoom_page(&self, direction: ZoomDirection) -> Result<(), String> {
+        self.screen
+            .lock()
+            .unwrap()
+            .push(format!("page {direction:?}"));
+        Ok(())
+    }
+    async fn open_settings(&self, page: SettingsPage) -> Result<bool, String> {
+        self.screen
+            .lock()
+            .unwrap()
+            .push(format!("settings {page:?}"));
+        Ok(true)
     }
     async fn read_article(&self) -> Result<PageText, String> {
         Ok(PageText {
@@ -1342,4 +1366,62 @@ fn undo_with_nothing_to_undo() {
             .unwrap()
             .contains("nothing")
     );
+}
+
+// ---- Making things bigger ----
+
+#[test]
+fn bigger_and_bigger_then_off() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[
+            ("m1", "screen_magnifier", json!({"action": "zoom_in"})),
+            ("m2", "screen_magnifier", json!({"action": "zoom_in"})),
+        ])),
+        Ok(call_turn(&[(
+            "m3",
+            "screen_magnifier",
+            json!({"action": "turn_off"}),
+        )])),
+        Ok(text_turn("Done.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let out = finished(drive(&model, &desk, false));
+    assert_eq!(
+        *desk.screen.lock().unwrap(),
+        vec!["ZoomIn", "ZoomIn", "TurnOff"],
+        "repeated zoom is allowed"
+    );
+    assert!(out.actions.iter().all(|a| a.verified));
+}
+
+#[test]
+fn settings_pages_only_open_and_undo_explains_magnifier() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    ask_state(
+        &state,
+        &desk,
+        vec![
+            Ok(call_turn(&[(
+                "s1",
+                "open_windows_settings",
+                json!({"page": "text_size"}),
+            )])),
+            Ok(call_turn(&[(
+                "m1",
+                "screen_magnifier",
+                json!({"action": "zoom_in"}),
+            )])),
+            Ok(text_turn("Done.")),
+        ],
+    );
+    assert_eq!(
+        *desk.screen.lock().unwrap(),
+        vec!["settings TextSize", "ZoomIn"]
+    );
+    let model = ScriptedModel::new(undo_turns());
+    block_on(state.run(&model, &desk, "undo", false, |_| {})).unwrap();
+    let r = &results(&model)[0]["result"];
+    assert_eq!(r["undone"], false);
+    assert!(r["reason"].as_str().unwrap().contains("magnifier off"));
 }

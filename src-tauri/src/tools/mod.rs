@@ -3,6 +3,8 @@
 #[cfg(windows)]
 pub mod browser;
 pub mod open_app;
+#[cfg(windows)]
+pub mod screen;
 pub mod web_url;
 #[cfg(windows)]
 pub mod win;
