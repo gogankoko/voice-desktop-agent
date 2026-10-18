@@ -225,6 +225,10 @@ impl ToolExecutor for FakeDesktop {
             c(ControlKind::Button, "Add milk to basket", false),
             c(ControlKind::Button, "Checkout", false),
             c(ControlKind::TextField, "Card number", true),
+            ControlRef {
+                value: Some("anna@example.com".into()),
+                ..c(ControlKind::TextField, "To", false)
+            },
         ])
     }
     async fn press_button(&self, c: ControlRef) -> Result<PressResult, String> {
@@ -1585,4 +1589,25 @@ fn read_window_by_number_uses_the_latest_list() {
             .unwrap()
             .contains("window 2")
     );
+}
+
+#[test]
+fn risky_button_confirmation_shows_what_is_filled_in() {
+    let state = AgentState::new();
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[("c0", "list_page_controls", json!({}))])),
+        Ok(call_turn(&[("p5", "press_button", json!({"number": 4}))])), // Checkout
+        Ok(text_turn("Done.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let out = block_on(state.run(&model, &desk, "check out", false, |_| {})).unwrap();
+    let c = out.confirmation.expect("asks first");
+    let labels: Vec<&str> = c.text.details.iter().map(|d| d.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        vec!["Button", "To"],
+        "button name plus the filled-in To box"
+    );
+    assert_eq!(c.text.details[1].value, "anna@example.com");
+    assert!(c.text.details.iter().all(|d| d.label != "Card number"));
 }

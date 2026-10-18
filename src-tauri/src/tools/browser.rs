@@ -1070,4 +1070,49 @@ text:
         println!("card refused: {refused:?}");
         assert!(refused.is_err());
     }
+
+    /// Live: the pretend webmail. Types a recipient, subject and message, checks the
+    /// confirmation details would show all three, then presses Send (pretend: nothing is
+    /// sent anywhere). Run:
+    /// cargo test --manifest-path src-tauri/Cargo.toml live_mail -- --ignored --nocapture --test-threads=1
+    #[test]
+    #[ignore = "opens the pretend webmail in the real browser and types into it"]
+    fn live_mail_draft() {
+        let exe = super::super::win::default_browser_exe().expect("default browser");
+        Command::new(&exe)
+            .arg(fixture_url("mail-test.html"))
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + NAVIGATION_TIMEOUT;
+        let mut ready = false;
+        while Instant::now() < deadline && !ready {
+            std::thread::sleep(POLL);
+            ready = read_page(&exe).is_ok_and(|p| p.title.contains("Pretend Webmail"));
+        }
+        assert!(ready, "mail page should load");
+        let find = |label: &str| {
+            list_controls(&exe)
+                .unwrap()
+                .into_iter()
+                .find(|c| c.label == label)
+                .unwrap_or_else(|| panic!("{label} box"))
+        };
+        for (label, text) in [
+            ("To", "test@example.com"),
+            ("Subject", "Pretend hello"),
+            ("Message", "This is a pretend message. Nothing is sent."),
+        ] {
+            let r = type_into_field(&exe, &find(label), text).expect(label);
+            println!("{label}: {r:?}");
+            assert!(r.verified, "{label}");
+        }
+        let details = crate::agent::registry::page_field_details(&list_controls(&exe).unwrap());
+        println!("confirmation details: {details:?}");
+        let labels: Vec<&str> = details.iter().map(|d| d.label.as_str()).collect();
+        assert_eq!(labels, vec!["To", "Subject", "Message"]);
+        press_button(&exe, &find("Send")).unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        let page = read_page(&exe).unwrap();
+        assert!(page.text.contains("Nothing was really sent"), "{}", page.text);
+    }
 }

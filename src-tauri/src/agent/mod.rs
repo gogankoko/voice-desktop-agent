@@ -412,6 +412,8 @@ pub struct TimedOut;
 pub struct PendingAction {
     pub call: ProposedCall,
     pub validated: ValidatedCall,
+    /// Extra facts for the confirmation screen, read fresh from the page (e.g. To/Subject/Message).
+    pub extra: Vec<registry::Detail>,
 }
 
 pub enum Drive {
@@ -514,9 +516,20 @@ impl TaskRun {
                                 true,
                             ));
                         }
+                        // Before a risky button press, show what's filled in on the page right now
+                        // (for "Send": the recipient, subject and message).
+                        let extra = if matches!(v, ValidatedCall::PressButton { .. }) {
+                            exec.list_controls()
+                                .await
+                                .map(|cs| registry::page_field_details(&cs))
+                                .unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
                         return Ok(Drive::NeedsConfirmation(PendingAction {
                             call,
                             validated: v,
+                            extra,
                         }));
                     }
                     Ok(v) => self.execute(&call, v, exec, on_executing).await,
@@ -1438,7 +1451,11 @@ impl AgentState {
                 let id = new_confirmation_id();
                 let request = ConfirmationRequest {
                     id: id.clone(),
-                    text: registry::confirmation_text(&pending.validated),
+                    text: {
+                        let mut t = registry::confirmation_text(&pending.validated);
+                        t.details.extend(pending.extra.iter().cloned());
+                        t
+                    },
                     expires_in_secs: CONFIRMATION_TTL.as_secs(),
                 };
                 let actions = std::mem::take(&mut run.actions);

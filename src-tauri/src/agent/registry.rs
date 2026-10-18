@@ -272,6 +272,33 @@ pub struct Detail {
     pub value: String,
 }
 
+/// The filled-in boxes on the page, for the confirmation screen before pressing a risky
+/// button (e.g. To / Subject / Message before "Send"). Never password or payment boxes.
+pub fn page_field_details(controls: &[crate::tools::browser::ControlRef]) -> Vec<Detail> {
+    const MAX_FIELDS: usize = 6;
+    const MAX_VALUE: usize = 600;
+    controls
+        .iter()
+        .filter(|c| c.kind == crate::tools::browser::ControlKind::TextField && !c.sensitive)
+        .filter_map(|c| {
+            let v = c.value.as_deref()?.trim();
+            if v.is_empty() {
+                return None;
+            }
+            let value = if v.chars().count() > MAX_VALUE {
+                format!("{}…", v.chars().take(MAX_VALUE).collect::<String>())
+            } else {
+                v.to_string()
+            };
+            Some(Detail {
+                label: c.label.clone(),
+                value,
+            })
+        })
+        .take(MAX_FIELDS)
+        .collect()
+}
+
 /// What the confirmation screen shows. Built here from validated arguments, never from
 /// the model's prose, so the user approves exactly what will run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1063,6 +1090,29 @@ mod tests {
             .risk(),
             Risk::Medium
         );
+    }
+
+    #[test]
+    fn page_fields_for_confirmation_skip_sensitive_and_empty_boxes() {
+        use crate::tools::browser::{ControlKind, ControlRef};
+        let c = |label: &str, value: Option<&str>, sensitive: bool| ControlRef {
+            kind: ControlKind::TextField,
+            label: label.into(),
+            ordinal: 0,
+            page_address: None,
+            sensitive,
+            value: value.map(String::from),
+        };
+        let details = page_field_details(&[
+            c("To", Some("anna@example.com"), false),
+            c("Subject", Some("Running late"), false),
+            c("Message", Some("I'll be there at five."), false),
+            c("Card number", Some("4111"), true),
+            c("Search", Some(""), false),
+        ]);
+        let labels: Vec<&str> = details.iter().map(|d| d.label.as_str()).collect();
+        assert_eq!(labels, vec!["To", "Subject", "Message"]);
+        assert_eq!(details[0].value, "anna@example.com");
     }
 
     #[test]

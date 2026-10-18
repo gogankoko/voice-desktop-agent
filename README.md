@@ -35,6 +35,8 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1          # UI, I
 powershell -ExecutionPolicy Bypass -File scripts/smoke-open-browser.ps1
 # Pretend shop end-to-end: search, add to basket, checkout asks first (VISIBLE: opens a local page, types into it):
 powershell -ExecutionPolicy Bypass -File scripts/smoke-shop.ps1
+# Pretend webmail (VISIBLE: opens a local page, types into it, pretend Send; nothing is sent):
+cargo test --manifest-path src-tauri/Cargo.toml live_mail -- --ignored --nocapture --test-threads=1
 # Confirmation gate in Practice mode (needs a Gemini key; launches the app itself; nothing is sent):
 powershell -ExecutionPolicy Bypass -File scripts/smoke-confirm.ps1
 # Sends a deliberately FAKE key to Microsoft and checks it is rejected and not stored:
