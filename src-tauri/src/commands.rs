@@ -68,6 +68,18 @@ pub async fn get_speech_token(state: State<'_, SpeechState>) -> Result<SpeechTok
     speech::token(&state).await
 }
 
+/// Natural-voice audio (MP3 bytes) for a reply. The Azure key never leaves Rust.
+#[tauri::command]
+pub async fn speak_natural(
+    state: State<'_, SpeechState>,
+    text: String,
+    voice: crate::prefs::Voice,
+) -> Result<tauri::ipc::Response, String> {
+    speech::synthesize(&state, &text, voice)
+        .await
+        .map(tauri::ipc::Response::new)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantSetup {

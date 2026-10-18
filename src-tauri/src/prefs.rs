@@ -35,6 +35,61 @@ impl TextSize {
     }
 }
 
+/// The voice that reads replies aloud: a natural Azure voice, or the Windows voice.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Voice {
+    #[default]
+    Ava,
+    Andrew,
+    Emma,
+    Brian,
+    Sonia,
+    Ryan,
+    Windows,
+}
+
+impl Voice {
+    const ALL: [Voice; 7] = [
+        Voice::Ava,
+        Voice::Andrew,
+        Voice::Emma,
+        Voice::Brian,
+        Voice::Sonia,
+        Voice::Ryan,
+        Voice::Windows,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Voice::Ava => "ava",
+            Voice::Andrew => "andrew",
+            Voice::Emma => "emma",
+            Voice::Brian => "brian",
+            Voice::Sonia => "sonia",
+            Voice::Ryan => "ryan",
+            Voice::Windows => "windows",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.as_str() == s)
+    }
+
+    /// Azure's name for the voice (None: the Windows voice).
+    pub fn azure_name(self) -> Option<&'static str> {
+        Some(match self {
+            Voice::Ava => "en-US-AvaMultilingualNeural",
+            Voice::Andrew => "en-US-AndrewMultilingualNeural",
+            Voice::Emma => "en-US-EmmaMultilingualNeural",
+            Voice::Brian => "en-US-BrianMultilingualNeural",
+            Voice::Sonia => "en-GB-SoniaNeural",
+            Voice::Ryan => "en-GB-RyanNeural",
+            Voice::Windows => return None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Preferences {
@@ -45,6 +100,8 @@ pub struct Preferences {
     pub practice_mode: bool,
     /// Let the assistant search file names in Downloads, Pictures, Documents and Desktop.
     pub file_search: bool,
+    /// The voice for replies (natural Azure voices need the Azure Speech key).
+    pub voice: Voice,
 }
 
 impl Default for Preferences {
@@ -54,6 +111,7 @@ impl Default for Preferences {
             speak_replies: true,
             practice_mode: false,
             file_search: false,
+            voice: Voice::Ava,
         }
     }
 }
@@ -114,6 +172,10 @@ impl PrefsStore {
                 Some("0") => false,
                 _ => defaults.file_search,
             },
+            voice: get("voice")?
+                .as_deref()
+                .and_then(Voice::parse)
+                .unwrap_or(defaults.voice),
         })
     }
 
@@ -125,6 +187,7 @@ impl PrefsStore {
             ("speak_replies", if prefs.speak_replies { "1" } else { "0" }),
             ("practice_mode", if prefs.practice_mode { "1" } else { "0" }),
             ("file_search", if prefs.file_search { "1" } else { "0" }),
+            ("voice", prefs.voice.as_str()),
         ] {
             tx.execute(
                 "INSERT INTO preferences (key, value) VALUES (?1, ?2)
@@ -146,7 +209,21 @@ mod tests {
             speak_replies,
             practice_mode: !speak_replies,
             file_search: speak_replies,
+            voice: if speak_replies {
+                Voice::Brian
+            } else {
+                Voice::Windows
+            },
         }
+    }
+
+    #[test]
+    fn every_voice_round_trips_and_only_windows_has_no_azure_name() {
+        for v in Voice::ALL {
+            assert_eq!(Voice::parse(v.as_str()), Some(v));
+            assert_eq!(v.azure_name().is_none(), v == Voice::Windows);
+        }
+        assert_eq!(Voice::parse("en-US-Evil"), None);
     }
 
     #[test]
