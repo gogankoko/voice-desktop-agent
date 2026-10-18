@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **New look:** an indigo-to-violet colour theme in light and dark mode. A glowing microphone button turns teal while listening, a coloured status pill shows what the app is doing, and the conversation appears as chat bubbles, with green ✓ / red ⚠ notes for actions. Settings are grouped into cards, and the confirmation screen has big green Yes and red No buttons. All text keeps at least 4.5:1 contrast, and Windows high-contrast themes and "reduce motion" are still respected.
 - **Built-in commands: instant, free, offline.** Everyday requests are now handled by the app itself, without asking the AI: "open YouTube" (and ~35 other popular sites), "open Spotify", "open my browser", "pause", "next song", "turn it up", "set a timer for 10 minutes", "remind me in 20 minutes to take my pills", "how much battery do I have?", "minimize this", "what time is it?". They answer straight away, work without a Gemini key, and don't use any Gemini quota. Asking for something specific, like "play Yeat on Spotify", still goes to the AI.
 - **Talk from anywhere:** press Ctrl+Alt+Space (or, if another program already uses it, the shortcut shown in the app) to bring the assistant forward and start listening. It also answers its yes/no questions.
 - **Timers and reminders:** "remind me in 20 minutes to take my pills", "set a timer for 10 minutes", "remind me at 5 to call Anna", "what reminders do I have?". They chime, appear and are read aloud, and bring the app back if it was minimized. They only work while the app is open.
