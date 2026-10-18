@@ -42,6 +42,27 @@ pub const MAX_HOLD: Duration = Duration::from_secs(15 * 60);
 const HISTORY_TURNS: usize = 6;
 pub const MAX_REQUEST_CHARS: usize = 2000;
 
+/// Something the assistant did that "undo" may be able to reverse. Session-level, newest last.
+#[derive(Debug, Clone, PartialEq)]
+pub enum UndoEntry {
+    /// A link or button took the browser from `from` to `to` (same tab): undo = Back.
+    Navigated {
+        from: Option<String>,
+        to: Option<String>,
+        what: String,
+    },
+    /// Typed into a box that previously held `previous`: undo = put that back.
+    Typed {
+        control: ControlRef,
+        previous: String,
+        label: String,
+    },
+    /// Done, but not safely reversible by the app.
+    NotUndoable { what: String, why: String },
+}
+
+const UNDO_HISTORY: usize = 10;
+
 /// One step starting, for the "what is it doing right now" status line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Progress {
@@ -133,6 +154,11 @@ pub trait ToolExecutor {
         &self,
     ) -> impl Future<Output = Result<Vec<crate::tools::win::WindowSummary>, String>> + Send;
     fn read_article(&self) -> impl Future<Output = Result<PageText, String>> + Send;
+    fn go_back(
+        &self,
+        expected_current: Option<String>,
+        expected_previous: Option<String>,
+    ) -> impl Future<Output = Result<NavigationResult, String>> + Send;
     fn press_button(
         &self,
         c: ControlRef,
@@ -179,6 +205,20 @@ impl ToolExecutor for DesktopExecutor {
     }
     async fn follow_link(&self, link: LinkRef) -> Result<NavigationResult, String> {
         blocking(move || crate::tools::browser::follow_link(&browser_exe()?, &link)).await
+    }
+    async fn go_back(
+        &self,
+        expected_current: Option<String>,
+        expected_previous: Option<String>,
+    ) -> Result<NavigationResult, String> {
+        blocking(move || {
+            crate::tools::browser::go_back(
+                &browser_exe()?,
+                expected_current.as_deref(),
+                expected_previous.as_deref(),
+            )
+        })
+        .await
     }
     async fn read_article(&self) -> Result<PageText, String> {
         blocking(|| crate::tools::browser::read_article(&browser_exe()?)).await
@@ -334,6 +374,12 @@ pub struct TaskRun {
     controls: Vec<ControlRef>,
     /// Set by `read_page_aloud`; handed to the app, never to the model.
     read_aloud: Option<ReadAloudText>,
+    /// Reversible things done in this request (moved to the session history at the end).
+    undo_log: Vec<UndoEntry>,
+    /// The session's most recent entry when this request started.
+    undo_target: Option<UndoEntry>,
+    /// `undo_target` was undone during this request.
+    undo_used: bool,
 }
 
 impl TaskRun {
@@ -351,6 +397,9 @@ impl TaskRun {
             links: Vec::new(),
             controls: Vec::new(),
             read_aloud: None,
+            undo_log: Vec::new(),
+            undo_target: None,
+            undo_used: false,
         }
     }
 
@@ -665,6 +714,7 @@ impl TaskRun {
             },
             ValidatedCall::FollowLink { number, ref text } => {
                 let link = self.links[(number - 1) as usize].clone(); // checked in resolve_link
+                let page_before = link.page_address.clone();
                 match exec.follow_link(link).await {
                     Ok(nav) => {
                         let summary = if nav.verified {
@@ -677,6 +727,13 @@ impl TaskRun {
                             )
                         };
                         self.report("follow_link", true, nav.verified, summary);
+                        if nav.verified {
+                            self.undo_log.push(UndoEntry::Navigated {
+                                from: page_before.clone(),
+                                to: nav.address.clone(),
+                                what: format!("followed the link \u{201c}{text}\u{201d}"),
+                            });
+                        }
                         // The old list belongs to the old page.
                         self.links.clear();
                         function_result(
@@ -689,6 +746,83 @@ impl TaskRun {
                         self.report("follow_link", false, false, why.clone());
                         function_result(call, json!({ "error": why }), true)
                     }
+                }
+            }
+            ValidatedCall::UndoLast => {
+                let (entry, from_this_request) = match self.undo_log.last() {
+                    Some(e) => (Some(e.clone()), true),
+                    None if !self.undo_used => (self.undo_target.clone(), false),
+                    None => (None, false),
+                };
+                let mark_done = |run: &mut TaskRun| {
+                    if from_this_request {
+                        run.undo_log.pop();
+                    } else {
+                        run.undo_used = true;
+                    }
+                };
+                match entry {
+                    None => function_result(
+                        call,
+                        json!({ "undone": false, "reason": "There's nothing I did recently that I can undo." }),
+                        false,
+                    ),
+                    Some(UndoEntry::NotUndoable { what, why }) => function_result(
+                        call,
+                        json!({ "undone": false, "last_action": what, "reason": why }),
+                        false,
+                    ),
+                    Some(UndoEntry::Navigated { from, to, what }) => match exec
+                        .go_back(to, from)
+                        .await
+                    {
+                        Ok(nav) => {
+                            mark_done(self);
+                            let summary = if nav.verified {
+                                format!("Undid: {what} (went back to the previous page, checked)")
+                            } else {
+                                format!(
+                                    "Pressed Back to undo: {what}, but couldn't confirm the earlier page came back"
+                                )
+                            };
+                            self.report("undo_last_action", true, nav.verified, summary);
+                            function_result(
+                                call,
+                                json!({ "undone": true, "verified": nav.verified, "what": what }),
+                                false,
+                            )
+                        }
+                        Err(why) => {
+                            self.report("undo_last_action", false, false, why.clone());
+                            function_result(call, json!({ "undone": false, "reason": why }), true)
+                        }
+                    },
+                    Some(UndoEntry::Typed {
+                        control,
+                        previous,
+                        label,
+                    }) => match exec.type_text(control, previous.clone()).await {
+                        Ok(r) => {
+                            mark_done(self);
+                            let summary = if previous.is_empty() {
+                                format!("Undid typing: emptied \u{201c}{label}\u{201d}")
+                            } else {
+                                format!(
+                                    "Undid typing: put back what was in \u{201c}{label}\u{201d}"
+                                )
+                            };
+                            self.report("undo_last_action", true, r.verified, summary);
+                            function_result(
+                                call,
+                                json!({ "undone": true, "verified": r.verified }),
+                                false,
+                            )
+                        }
+                        Err(why) => {
+                            self.report("undo_last_action", false, false, why.clone());
+                            function_result(call, json!({ "undone": false, "reason": why }), true)
+                        }
+                    },
                 }
             }
             ValidatedCall::ReadAloud => match exec.read_article().await {
@@ -795,6 +929,7 @@ impl TaskRun {
             },
             ValidatedCall::PressButton { number, ref label } => {
                 let c = self.controls[(number - 1) as usize].clone(); // checked in resolve_link
+                let page_before = c.page_address.clone();
                 match exec.press_button(c).await {
                     Ok(r) => {
                         let summary = if r.address_changed {
@@ -803,6 +938,18 @@ impl TaskRun {
                             format!("Pressed \u{201c}{label}\u{201d}")
                         };
                         self.report("press_button", true, true, summary);
+                        self.undo_log.push(if r.address_changed {
+                            UndoEntry::Navigated {
+                                from: page_before,
+                                to: r.address.clone(),
+                                what: format!("pressed \u{201c}{label}\u{201d}"),
+                            }
+                        } else {
+                            UndoEntry::NotUndoable {
+                                what: format!("pressed \u{201c}{label}\u{201d}"),
+                                why: "I can't undo a button press on a website. If it changed something, like adding to a basket, it can usually be undone on the page itself.".into(),
+                            }
+                        });
                         if r.address_changed {
                             self.links.clear();
                             self.controls.clear();
@@ -830,6 +977,7 @@ impl TaskRun {
                 ref text,
             } => {
                 let c = self.controls[(number - 1) as usize].clone(); // checked in resolve_link
+                let undo_control = c.clone();
                 match exec.type_text(c, text.clone()).await {
                     Ok(r) => {
                         let summary = if r.verified {
@@ -842,6 +990,12 @@ impl TaskRun {
                             )
                         };
                         self.report("type_text", true, r.verified, summary);
+                        let previous = undo_control.value.clone().unwrap_or_default();
+                        self.undo_log.push(UndoEntry::Typed {
+                            control: undo_control,
+                            previous,
+                            label: label.clone(),
+                        });
                         function_result(
                             call,
                             json!({ "typed": true, "verified": r.verified }),
@@ -855,6 +1009,10 @@ impl TaskRun {
                 }
             }
             ValidatedCall::PracticeSendMessage { to, .. } => {
+                self.undo_log.push(UndoEntry::NotUndoable {
+                    what: "the practice message".into(),
+                    why: "Nothing was really sent, so there's nothing to undo.".into(),
+                });
                 self.actions.push(ActionReport {
                     tool: "practice_send_message",
                     ok: true,
@@ -903,6 +1061,7 @@ struct Paused {
 pub struct AgentState {
     pub http: reqwest::Client,
     history: Mutex<Vec<Value>>,
+    undo: Mutex<Vec<UndoEntry>>,
     current: Mutex<Option<Arc<Cancel>>>,
     paused: Mutex<Option<Paused>>,
 }
@@ -912,6 +1071,7 @@ impl AgentState {
         Self {
             http: reqwest::Client::new(),
             history: Mutex::new(Vec::new()),
+            undo: Mutex::new(Vec::new()),
             current: Mutex::new(None),
             paused: Mutex::new(None),
         }
@@ -965,6 +1125,17 @@ impl AgentState {
         model_id: &'static str,
     ) -> Result<AgentOutcome, String> {
         *self.current.lock().expect("agent lock") = None;
+        let mut run = run;
+        {
+            let mut undo = self.undo.lock().expect("agent lock");
+            if run.undo_used {
+                undo.pop();
+                run.undo_used = false;
+            }
+            undo.extend(std::mem::take(&mut run.undo_log));
+            let excess = undo.len().saturating_sub(UNDO_HISTORY);
+            undo.drain(..excess);
+        }
         match result {
             Err(_) => Err("That took too long, so I stopped. Please try again.".into()),
             Ok(Err(e)) => Err(e.user_message()),
@@ -989,7 +1160,6 @@ impl AgentState {
                     text: registry::confirmation_text(&pending.validated),
                     expires_in_secs: CONFIRMATION_TTL.as_secs(),
                 };
-                let mut run = run;
                 let actions = std::mem::take(&mut run.actions);
                 *self.paused.lock().expect("agent lock") = Some(Paused {
                     id,
@@ -1027,6 +1197,7 @@ impl AgentState {
         let cancel = self.begin()?;
         let history = self.history.lock().expect("agent lock").clone();
         let mut run = TaskRun::new(&history, utterance, practice);
+        run.undo_target = self.undo.lock().expect("agent lock").last().cloned();
         let result = tokio::select! {
             r = run.drive(model, exec, &cancel, &mut on_executing) => Ok(r),
             _ = active_time_limit(&cancel, TASK_TIMEOUT, MAX_HOLD) => Err(TimedOut),

@@ -95,6 +95,7 @@ pub enum ValidatedCall {
     ListControls,
     ListOpenWindows,
     ReadAloud,
+    UndoLast,
     /// `label` is filled in by the orchestrator from the latest control list.
     PressButton {
         number: u32,
@@ -124,7 +125,8 @@ impl ValidatedCall {
             ValidatedCall::FollowLink { text, .. } => link_risk(text),
             ValidatedCall::ListControls
             | ValidatedCall::ListOpenWindows
-            | ValidatedCall::ReadAloud => Risk::Low,
+            | ValidatedCall::ReadAloud
+            | ValidatedCall::UndoLast => Risk::Low,
             ValidatedCall::PressButton { label, .. } => link_risk(label),
             // Filling in a box without submitting: reversible, announced in the transcript.
             ValidatedCall::TypeText { .. } => Risk::Medium,
@@ -144,6 +146,7 @@ impl ValidatedCall {
             ValidatedCall::ListControls => "list_page_controls",
             ValidatedCall::ListOpenWindows => "list_open_windows",
             ValidatedCall::ReadAloud => "read_page_aloud",
+            ValidatedCall::UndoLast => "undo_last_action",
             ValidatedCall::PressButton { .. } => "press_button",
             ValidatedCall::TypeText { .. } => "type_text",
             ValidatedCall::PracticeSendMessage { .. } => "practice_send_message",
@@ -168,6 +171,7 @@ impl ValidatedCall {
             ValidatedCall::ListControls => "Looking at the page".into(),
             ValidatedCall::ListOpenWindows => "Looking at which windows are open".into(),
             ValidatedCall::ReadAloud => "Getting the article ready to read aloud".into(),
+            ValidatedCall::UndoLast => "Undoing the last thing I did".into(),
             ValidatedCall::PressButton { label, .. } => format!("Pressing \u{201c}{label}\u{201d}"),
             ValidatedCall::TypeText { label, text, .. } => {
                 format!("Typing \u{201c}{text}\u{201d} into \u{201c}{label}\u{201d}")
@@ -256,6 +260,7 @@ pub fn confirmation_text(call: &ValidatedCall) -> ConfirmationText {
         ValidatedCall::ListControls
         | ValidatedCall::ListOpenWindows
         | ValidatedCall::ReadAloud
+        | ValidatedCall::UndoLast
         | ValidatedCall::ReadWebpage
         | ValidatedCall::ScrollWebpage { .. }
         | ValidatedCall::ListLinks => ConfirmationText {
@@ -407,7 +412,11 @@ pub fn declarations(practice: bool) -> Vec<Value> {
         }),
         json!({
             "type": "function",
-            "name": "read_page_aloud",
+            "name": "undo_last_action",
+            "description": "Undoes the most recent thing you did on the computer, if it can be undone safely: going back after a link or button opened a new page, or putting back what was in a box you typed into. If it can't be undone, the result says why; tell the person kindly. Use it when they say undo, go back, or that was wrong.",
+            "parameters": {"type": "object", "properties": {}}
+        }),
+        json!({ "type": "function", "name": "read_page_aloud",
             "description": "Reads the article on the current web page aloud to the person, in full, with the app's own voice (they can pause and continue). Use it when they ask you to read the page or article to them. You won't receive the text; just say briefly that you're reading it.",
             "parameters": {"type": "object", "properties": {}}
         }),
@@ -530,6 +539,11 @@ pub fn validate(name: &str, arguments: &Value, practice: bool) -> Result<Validat
                         .into(),
                 )
             }),
+        "undo_last_action" => {
+            serde_json::from_value::<NoArgs>(arguments.clone())
+                .map_err(|_| Refusal("This tool takes no arguments.".into()))?;
+            Ok(ValidatedCall::UndoLast)
+        }
         "read_page_aloud" => {
             serde_json::from_value::<NoArgs>(arguments.clone())
                 .map_err(|_| Refusal("This tool takes no arguments.".into()))?;
@@ -658,8 +672,8 @@ mod tests {
                 message: "Hello".into()
             })
         );
-        assert_eq!(declarations(false).len(), 11);
-        assert_eq!(declarations(true).len(), 12);
+        assert_eq!(declarations(false).len(), 12);
+        assert_eq!(declarations(true).len(), 13);
     }
 
     #[test]

@@ -62,6 +62,7 @@ struct FakeDesktop {
     followed: Mutex<Vec<String>>,
     pressed: Mutex<Vec<String>>,
     typed: Mutex<Vec<(String, String)>>,
+    backs: Mutex<Vec<(Option<String>, Option<String>)>>,
 }
 
 const PAGE_LINKS: [&str; 3] = ["Go to the second page", "Delete my account", "News"];
@@ -108,6 +109,20 @@ impl ToolExecutor for FakeDesktop {
                 page_address: Some("https://example.org/".into()),
             })
             .collect())
+    }
+    async fn go_back(
+        &self,
+        expected_current: Option<String>,
+        expected_previous: Option<String>,
+    ) -> Result<NavigationResult, String> {
+        self.backs
+            .lock()
+            .unwrap()
+            .push((expected_current, expected_previous.clone()));
+        Ok(NavigationResult {
+            verified: true,
+            address: expected_previous,
+        })
     }
     async fn read_article(&self) -> Result<PageText, String> {
         Ok(PageText {
@@ -1212,4 +1227,119 @@ fn active_time_counts_when_not_held() {
     });
     assert!(reached);
     assert!(!cancel.is_cancelled());
+}
+
+// ---- Undo ----
+
+fn ask_state(
+    state: &AgentState,
+    desk: &FakeDesktop,
+    turns: Vec<Result<ModelTurn, ModelError>>,
+) -> AgentOutcome {
+    let model = ScriptedModel::new(turns);
+    block_on(state.run(&model, desk, "x", false, |_| {})).unwrap()
+}
+
+fn undo_turns() -> Vec<Result<ModelTurn, ModelError>> {
+    vec![
+        Ok(call_turn(&[("u1", "undo_last_action", json!({}))])),
+        Ok(text_turn("Done.")),
+    ]
+}
+
+#[test]
+fn undo_goes_back_after_following_a_link() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    ask_state(
+        &state,
+        &desk,
+        vec![
+            Ok(call_turn(&[("l1", "list_links", json!({}))])),
+            Ok(call_turn(&[("f1", "follow_link", json!({"number": 1}))])),
+            Ok(text_turn("Here's the second page.")),
+        ],
+    );
+    let out = ask_state(&state, &desk, undo_turns());
+    assert_eq!(
+        *desk.backs.lock().unwrap(),
+        vec![(
+            Some("https://example.org/2".to_string()),
+            Some("https://example.org/".to_string())
+        )]
+    );
+    assert!(out.actions[0].summary.contains("went back"));
+    // Undone once: a second undo has nothing left.
+    let model = ScriptedModel::new(undo_turns());
+    block_on(state.run(&model, &desk, "undo again", false, |_| {})).unwrap();
+    let r = &results(&model)[0]["result"];
+    assert_eq!(r["undone"], false);
+}
+
+#[test]
+fn undo_puts_back_what_was_in_a_box() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    ask_state(
+        &state,
+        &desk,
+        vec![
+            Ok(call_turn(&[("c0", "list_page_controls", json!({}))])),
+            Ok(call_turn(&[(
+                "t1",
+                "type_text",
+                json!({"number": 1, "text": "milk"}),
+            )])),
+            Ok(text_turn("Typed.")),
+        ],
+    );
+    ask_state(&state, &desk, undo_turns());
+    let typed = desk.typed.lock().unwrap().clone();
+    assert_eq!(
+        typed,
+        vec![
+            ("Search products".to_string(), "milk".to_string()),
+            ("Search products".to_string(), String::new()),
+        ]
+    );
+}
+
+#[test]
+fn undo_explains_what_it_cannot_undo() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    ask_state(
+        &state,
+        &desk,
+        vec![
+            Ok(call_turn(&[("c0", "list_page_controls", json!({}))])),
+            Ok(call_turn(&[("p3", "press_button", json!({"number": 3}))])),
+            Ok(text_turn("Added.")),
+        ],
+    );
+    let model = ScriptedModel::new(undo_turns());
+    block_on(state.run(&model, &desk, "undo", false, |_| {})).unwrap();
+    let r = &results(&model)[0]["result"];
+    assert_eq!(r["undone"], false);
+    assert!(
+        r["reason"]
+            .as_str()
+            .unwrap()
+            .contains("can't undo a button press")
+    );
+    assert!(desk.backs.lock().unwrap().is_empty());
+}
+
+#[test]
+fn undo_with_nothing_to_undo() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    let model = ScriptedModel::new(undo_turns());
+    block_on(state.run(&model, &desk, "undo", false, |_| {})).unwrap();
+    assert!(
+        results(&model)[0]["result"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("nothing")
+    );
 }
