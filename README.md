@@ -2,7 +2,7 @@
 
 A Windows 11 desktop assistant you talk to like a phone call. It opens apps, reads the screen, and helps with everyday tasks, and it always asks before anything important.
 
-> **Status: Phase 5.** Talk or type in your own words. Azure Speech listens, Google Gemini understands, Windows voices answer. The only computer action so far is opening your default browser, and the app checks that it worked. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
+> **Status: Phase 7.** Talk or type in your own words. Azure Speech listens, Google Gemini understands, Windows voices answer. It can open your browser and websites, read a page, scroll, and follow links, checking each step. Anything risky shows a confirmation screen first. It **cannot yet hear, speak, or control your computer**, and the UI says so. See [CHECKLIST.md](CHECKLIST.md).
 
 ## Prerequisites (Windows 11 x64)
 
