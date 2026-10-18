@@ -23,7 +23,8 @@ This app is built so that you can tell exactly what leaves your computer and whe
 ## Sent to Google (Gemini): only when you make a request
 
 - What you said or typed, the last few turns of this session's conversation, the assistant's fixed instructions, the list of tools, and your computer's local date and time.
-- **When you ask about a web page:** up to about 6,000 characters of that page's text.
+- **When you ask about a web page:** up to about 6,000 characters of that page's text. ("Read me this article" is different: that text is read aloud by your computer and is **not** sent to Google.)
+- **When you ask what's on your screen:** the titles of your open windows.
 - Requests are sent with `store: false`, so Google doesn't keep them as stored interactions.
 - **Free tier:** Google's pricing page says free-tier content may be used to improve Google's products. Turn on billing for the Gemini project before using the assistant with real users' personal requests.
 
