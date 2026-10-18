@@ -35,5 +35,6 @@ The app checks the key with a free call to Google before saving it.
 |---|---|
 | "Google didn't accept that key" | Copy it again from AI Studio; make sure nothing extra was copied. |
 | "The assistant is busy, or today's free limit has been reached" | Wait a minute, or turn on billing. |
+| It does only the first part of a request | Usually the free tier's 5-requests-per-minute limit: a task like "open YouTube and search for X" needs 4-6. The app switches to backup models, but turning on billing makes multi-step tasks reliable. |
 | "I couldn't reach the assistant service" | Check the internet connection, VPN or firewall. |
 | It says it can't do something | Correct: only opening the browser exists so far. More tools come in later phases. |
