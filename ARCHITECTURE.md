@@ -58,7 +58,7 @@ user words ─► run_agent ─► Gemini (store:false) ─► proposed calls �
 - `ChatModel` trait: Gemini today; any provider that can propose function calls fits. Tests use a scripted model.
 - `ToolExecutor` trait: `DesktopExecutor` for real, a fake in tests.
 - Model steps (including thought signatures) are replayed verbatim within a request, as Google requires. Across requests only text turns are kept.
-- The frontend (`core/agentTurn.ts`) maps progress events and the outcome onto the conversation state machine. Without a Gemini key it falls back to `core/intents.ts` fixed phrases.
+- The frontend (`core/agentTurn.ts`) maps progress events and the outcome onto the conversation state machine. Built-in commands (`src-tauri/src/agent/local.rs`) are matched in Rust before the AI and work without a Gemini key.
 - **Confirmation (Phase 6):** `TaskRun` is resumable. `drive()` returns `Finished`, `Cancelled` or `NeedsConfirmation`; `AgentState` stores at most one paused run with a single-use id and the model that produced its steps; `confirm()` resolves the stored call (run or declined) and drives on. The UI shows `ConfirmDialog` and answers via `confirm_agent`.
 
 ```

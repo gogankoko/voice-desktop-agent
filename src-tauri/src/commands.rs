@@ -12,7 +12,6 @@ use crate::prefs::{Preferences, PrefsStore};
 use crate::secrets;
 use crate::speech::{self, SpeechSetup, SpeechState, SpeechToken};
 use crate::status::{AppStatus, current_status};
-use crate::tools::open_app::{self, AllowedApp, OpenResult};
 
 /// Reports which subsystems are actually available in this build so the UI
 /// never implies capabilities that do not exist yet.
@@ -41,18 +40,6 @@ pub fn set_preferences(
         "Your settings couldn't be saved.".to_string()
     })?;
     Ok(prefs)
-}
-
-/// Opens an allowlisted application. `app` is an enum, so the frontend cannot name
-/// arbitrary programs. Runs off the main thread because verification polls for seconds.
-#[tauri::command]
-pub async fn open_application(app: AllowedApp) -> Result<OpenResult, String> {
-    tauri::async_runtime::spawn_blocking(move || open_app::open(app))
-        .await
-        .map_err(|e| {
-            crate::diag::log("command", format!("open_application task failed: {e}"));
-            "Something went wrong while opening the app.".to_string()
-        })?
 }
 
 #[tauri::command]
@@ -149,8 +136,27 @@ pub async fn run_agent(
         loaded.as_ref().map(|p| p.file_search).unwrap_or(false),
         std::sync::atomic::Ordering::SeqCst,
     );
-    let model = gemini::Gemini::new(state.http.clone(), gemini_key()?, practice);
     let started = std::time::Instant::now();
+    // Built-in commands ("open YouTube", "pause", "set a timer...") run instantly, without
+    // the AI (and without a Gemini key); everything else goes to Gemini.
+    if let Some(plan) = built_in_plan(&text).await {
+        let model = agent::local::LocalModel::new(plan, local_clock());
+        let result = state
+            .run(
+                &model,
+                &DesktopExecutor,
+                &text,
+                practice,
+                progress(&app, task_id),
+            )
+            .await;
+        log_outcome("request", &result, started, model.model_id());
+        return result;
+    }
+    let key = gemini_key().map_err(|_| {
+        "Without the AI set up, I can only do built-in things like \"open YouTube\", \"pause\", \"next song\" or \"set a timer for 10 minutes\". For anything else, add a Gemini key in Settings.".to_string()
+    })?;
+    let model = gemini::Gemini::new(state.http.clone(), key, practice);
     let result = state
         .run(
             &model,
@@ -162,6 +168,32 @@ pub async fn run_agent(
         .await;
     log_outcome("request", &result, started, model.model_id());
     result
+}
+
+/// The built-in command for `text`, if it is one. Reads the Start menu only for "open X".
+async fn built_in_plan(text: &str) -> Option<agent::local::Plan> {
+    let apps = if agent::local::open_target(text).is_some() {
+        tauri::async_runtime::spawn_blocking(crate::tools::apps::installed_apps)
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    agent::local::plan(text, &apps)
+}
+
+fn local_clock() -> agent::local::Clock {
+    let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    agent::local::Clock {
+        year: t.wYear,
+        month: t.wMonth,
+        day_of_week: t.wDayOfWeek,
+        day: t.wDay,
+        hour: t.wHour,
+        minute: t.wMinute,
+    }
 }
 
 /// The user's explicit answer to a confirmation question. Only the matching, unexpired

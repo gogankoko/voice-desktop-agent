@@ -5,7 +5,6 @@ fn main() {
         "get_app_status",
         "get_preferences",
         "set_preferences",
-        "open_application",
         "get_speech_setup",
         "save_azure_speech",
         "clear_azure_speech",

@@ -21,7 +21,9 @@ This app is built so that you can tell exactly what leaves your computer and whe
 - Used to turn speech into text. This app does not record or keep the audio.
 - See Microsoft's data, privacy and security documentation for Azure AI Speech.
 
-## Sent to Google (Gemini): only when you make a request
+## Sent to Google (Gemini): only when you make a request the app can't do by itself
+
+Built-in commands ("open YouTube", "pause", "set a timer...", "how much battery...", "what time is it") are understood on this computer and **not** sent to Google. They are kept in the conversation history, so the last few turns sent with a later AI request may include them.
 
 - What you said or typed, the last few turns of this session's conversation, the assistant's fixed instructions, the list of tools, and your computer's local date and time.
 - **When you ask about a web page:** up to about 6,000 characters of that page's text. ("Read me this article" is different: that text is read aloud by your computer and is **not** sent to Google.)

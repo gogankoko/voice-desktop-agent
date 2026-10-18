@@ -39,7 +39,6 @@ pub fn run() {
             commands::get_app_status,
             commands::get_preferences,
             commands::set_preferences,
-            commands::open_application,
             commands::get_speech_setup,
             commands::save_azure_speech,
             commands::clear_azure_speech,

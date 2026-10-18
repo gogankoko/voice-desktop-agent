@@ -2012,3 +2012,85 @@ fn live_helpers_agent() {
     let c = ask("What reminders do I have?");
     assert!(c.reply.to_lowercase().contains("water"), "{}", c.reply);
 }
+
+fn built_in(state: &AgentState, desk: &FakeDesktop, utterance: &str) -> AgentOutcome {
+    let apps = vec![crate::tools::apps::InstalledApp {
+        name: "Spotify".into(),
+        id: "x".into(),
+    }];
+    let plan = super::local::plan(utterance, &apps).expect("a built-in command");
+    let clock = super::local::Clock {
+        year: 2026,
+        month: 10,
+        day_of_week: 0,
+        day: 18,
+        hour: 14,
+        minute: 0,
+    };
+    let model = super::local::LocalModel::new(plan, clock);
+    block_on(state.run(&model, desk, utterance, false, |_| {})).unwrap()
+}
+
+#[test]
+fn built_in_commands_run_through_the_normal_checked_loop() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+
+    let out = built_in(&state, &desk, "Open YouTube");
+    assert_eq!(out.reply, "Opening YouTube.");
+    assert_eq!(
+        *desk.sites.lock().unwrap(),
+        vec!["https://www.youtube.com/".to_string()]
+    );
+    assert!(out.actions[0].ok);
+
+    let out = built_in(&state, &desk, "set a timer for 5 minutes");
+    assert_eq!(
+        out.reply,
+        "Timer set for 5 minutes. It'll go off at 14:05. Keep this app open for it to ring."
+    );
+
+    let out = built_in(&state, &desk, "next song");
+    assert_eq!(out.reply, "Skipping to the next one.");
+    assert_eq!(*desk.media.lock().unwrap(), vec![MediaAction::NextTrack]);
+
+    let out = built_in(&state, &desk, "what time is it");
+    assert_eq!(out.reply, "It's 2:00 PM.");
+    assert!(out.actions.is_empty());
+
+    let out = built_in(&state, &desk, "how much battery do I have");
+    assert_eq!(
+        out.reply,
+        "Your battery is at 64 percent and not plugged in."
+    );
+
+    // The conversation history keeps the built-in turns, so the AI has context afterwards.
+    assert!(state.history.lock().unwrap().len() >= 10);
+}
+
+#[test]
+fn a_failed_built_in_command_says_why() {
+    let state = AgentState::new();
+    let desk = FakeDesktop::default();
+    let apps = vec![crate::tools::apps::InstalledApp {
+        name: "Zoom".into(),
+        id: "x".into(),
+    }];
+    let plan = super::local::plan("open zoom", &apps).unwrap();
+    let clock = super::local::Clock {
+        year: 2026,
+        month: 1,
+        day_of_week: 1,
+        day: 1,
+        hour: 9,
+        minute: 0,
+    };
+    let model = super::local::LocalModel::new(plan, clock);
+    let out = block_on(state.run(&model, &desk, "open zoom", false, |_| {})).unwrap();
+    assert!(
+        out.reply.starts_with("Sorry, I couldn't do that."),
+        "{}",
+        out.reply
+    );
+    assert!(!out.actions[0].ok);
+}

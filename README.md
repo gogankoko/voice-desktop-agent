@@ -41,6 +41,8 @@ cargo test --manifest-path src-tauri/Cargo.toml live_mail -- --ignored --nocaptu
 cargo test --manifest-path src-tauri/Cargo.toml live_spotify_controls -- --ignored --nocapture --test-threads=1
 # Timer goes off in the real app; talk shortcut brings it forward and listens (needs Gemini + Listening; mic turns on briefly):
 powershell -ExecutionPolicy Bypass -File scripts/smoke-helpers.ps1
+# Built-in commands, no AI (VISIBLE: opens YouTube):
+powershell -ExecutionPolicy Bypass -File scripts/smoke-built-in.ps1
 # Confirmation gate in Practice mode (needs a Gemini key; launches the app itself; nothing is sent):
 powershell -ExecutionPolicy Bypass -File scripts/smoke-confirm.ps1
 # Sends a deliberately FAKE key to Microsoft and checks it is rejected and not stored:
