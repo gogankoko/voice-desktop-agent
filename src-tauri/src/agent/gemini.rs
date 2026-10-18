@@ -13,9 +13,12 @@ use super::registry;
 
 /// Pinned rather than a `-latest` alias so behaviour doesn't change underneath us.
 pub const MODEL: &str = "gemini-3.8-flash";
-/// Used when the primary model is overloaded or rate-limited at the start of a request.
-/// Separate free-tier quota, cheaper, somewhat less capable.
-pub const FALLBACK_MODEL: &str = "gemini-3.5-flash-lite";
+/// Tried in order when the primary model is overloaded or rate-limited at the start of a
+/// request. Each has its own free-tier quota; the first is nearly as capable as the primary,
+/// the last is cheaper and weaker (it tends to stop after the first step of a multi-step task).
+pub const FALLBACK_MODELS: [&str; 2] = ["gemini-3.6-flash", "gemini-3.5-flash-lite"];
+#[cfg(test)]
+pub const FALLBACK_MODEL: &str = FALLBACK_MODELS[0];
 const RETRY_DELAY: Duration = Duration::from_millis(1500);
 const ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const MODELS_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1";
@@ -159,9 +162,12 @@ fn has_model_bound_steps(input: &[Value]) -> bool {
     })
 }
 
-/// Bounded retry policy: one retry after `delay` on transient server errors, then, if the
-/// request is still fresh, one attempt on the fallback model when the primary is
-/// overloaded or rate-limited. Returns the result and the model that produced it.
+/// Bounded retry policy (returns the result and the model that produced it):
+/// - transient server errors: one retry after `delay`;
+/// - fresh request (no model-bound steps yet) and the model is overloaded or rate-limited:
+///   try each fallback model in turn;
+/// - mid-request rate limit: the model can't change, so wait (3x then 6x `delay`) and retry,
+///   instead of abandoning a half-done task.
 pub async fn with_retry_and_fallback<F, Fut>(
     current: &'static str,
     fresh: bool,
@@ -172,23 +178,41 @@ where
     F: FnMut(&'static str) -> Fut,
     Fut: Future<Output = Result<ModelTurn, ModelError>>,
 {
+    let unavailable = |r: &Result<ModelTurn, ModelError>| {
+        matches!(r, Err(ModelError::Overloaded | ModelError::RateLimited))
+    };
     let mut result = attempt(current).await;
     if matches!(result, Err(ModelError::Overloaded | ModelError::Server(_))) {
         tokio::time::sleep(delay).await;
         result = attempt(current).await;
     }
-    if fresh
-        && current != FALLBACK_MODEL
-        && matches!(
-            result,
-            Err(ModelError::Overloaded | ModelError::RateLimited)
-        )
-    {
-        crate::diag::log(
-            "gemini",
-            format!("gemini: {current} unavailable, trying {FALLBACK_MODEL}"),
-        );
-        return (attempt(FALLBACK_MODEL).await, FALLBACK_MODEL);
+    if fresh && unavailable(&result) {
+        let mut used = current;
+        for fallback in FALLBACK_MODELS.into_iter().filter(|m| *m != current) {
+            crate::diag::log(
+                "gemini",
+                format!("gemini: {used} unavailable, trying {fallback}"),
+            );
+            used = fallback;
+            result = attempt(fallback).await;
+            if !unavailable(&result) {
+                break;
+            }
+        }
+        return (result, used);
+    }
+    if !fresh {
+        for factor in [3, 6] {
+            if !matches!(result, Err(ModelError::RateLimited)) {
+                break;
+            }
+            crate::diag::log(
+                "gemini",
+                format!("gemini: {current} rate-limited mid-request, waiting"),
+            );
+            tokio::time::sleep(delay * factor).await;
+            result = attempt(current).await;
+        }
     }
     (result, current)
 }
@@ -535,6 +559,38 @@ mod tests {
             assert_eq!(r.unwrap_err(), e);
             assert_eq!(tried.len(), 1);
         }
+    }
+
+    #[test]
+    fn fallback_chain_tries_the_next_model() {
+        let (r, used, tried) = policy(
+            true,
+            vec![
+                Err(ModelError::RateLimited),
+                Err(ModelError::RateLimited),
+                ok_turn(),
+            ],
+        );
+        assert!(r.is_ok());
+        assert_eq!(used, FALLBACK_MODELS[1]);
+        assert_eq!(tried, vec![MODEL, FALLBACK_MODELS[0], FALLBACK_MODELS[1]]);
+    }
+
+    #[test]
+    fn mid_request_rate_limit_waits_and_keeps_the_same_model() {
+        let (r, used, tried) = policy(false, vec![Err(ModelError::RateLimited), ok_turn()]);
+        assert!(r.is_ok());
+        assert_eq!((used, tried), (MODEL, vec![MODEL, MODEL]));
+        let (r, _, tried) = policy(
+            false,
+            vec![
+                Err(ModelError::RateLimited),
+                Err(ModelError::RateLimited),
+                Err(ModelError::RateLimited),
+            ],
+        );
+        assert_eq!(r.unwrap_err(), ModelError::RateLimited);
+        assert_eq!(tried.len(), 3, "bounded: two waits, then give up");
     }
 
     #[test]

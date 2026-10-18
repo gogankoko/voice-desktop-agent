@@ -21,9 +21,9 @@ use windows::Win32::UI::Accessibility::{
     IUIAutomationInvokePattern, IUIAutomationScrollPattern, IUIAutomationTextPattern,
     IUIAutomationValuePattern, ScrollAmount_LargeDecrement, ScrollAmount_LargeIncrement,
     ScrollAmount_NoAmount, TreeScope_Descendants, UIA_ButtonControlTypeId, UIA_CONTROLTYPE_ID,
-    UIA_ControlTypePropertyId, UIA_DocumentControlTypeId, UIA_EditControlTypeId,
-    UIA_HyperlinkControlTypeId, UIA_InvokePatternId, UIA_ScrollPatternId, UIA_TextPatternId,
-    UIA_ValuePatternId,
+    UIA_ComboBoxControlTypeId, UIA_ControlTypePropertyId, UIA_DocumentControlTypeId,
+    UIA_EditControlTypeId, UIA_HyperlinkControlTypeId, UIA_InvokePatternId, UIA_ScrollPatternId,
+    UIA_TextPatternId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP,
@@ -66,6 +66,8 @@ const SENSITIVE_FIELD_WORDS: &[&str] = &[
 ];
 const NAVIGATION_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(300);
+/// How long to wait for a page that is still loading before giving up on it.
+const PAGE_READY_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageText {
@@ -172,8 +174,17 @@ impl Browser {
     /// The web page itself (Chromium-based browsers and Firefox expose it as a Document).
     fn document(&self) -> Result<IUIAutomationElement, String> {
         let cond = control_type(&self.a, UIA_DocumentControlTypeId)?;
-        unsafe { self.root.FindFirst(TreeScope_Descendants, &cond) }
-            .map_err(|_| "I can't see a web page in the browser right now.".to_string())
+        // Right after navigating, the page may not exist in the accessibility tree yet.
+        let deadline = Instant::now() + PAGE_READY_TIMEOUT;
+        loop {
+            if let Ok(doc) = unsafe { self.root.FindFirst(TreeScope_Descendants, &cond) } {
+                return Ok(doc);
+            }
+            if Instant::now() >= deadline {
+                return Err("I can't see a web page in the browser right now.".to_string());
+            }
+            std::thread::sleep(POLL);
+        }
     }
 
     /// What the address bar shows, if it can be found.
@@ -233,6 +244,34 @@ fn address_matches(address: &str, site: &str) -> bool {
     host == site || host.ends_with(&format!(".{site}"))
 }
 
+/// After navigating: waits (bounded) until the page has a title and some text, so the next
+/// step doesn't look at a half-loaded page. Never fails; a slow page is simply left as is.
+fn wait_until_loaded(exe: &Path) {
+    let deadline = Instant::now() + PAGE_READY_TIMEOUT;
+    while Instant::now() < deadline {
+        if let Ok(b) = Browser::find(exe) {
+            let cond = control_type(&b.a, UIA_DocumentControlTypeId);
+            let doc = cond
+                .ok()
+                .and_then(|c| unsafe { b.root.FindFirst(TreeScope_Descendants, &c) }.ok());
+            if let Some(doc) = doc {
+                let has_title = !name_of(&doc).is_empty();
+                let has_text = unsafe {
+                    doc.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId)
+                }
+                .and_then(|p| unsafe { p.DocumentRange() })
+                .and_then(|r| unsafe { r.GetText(200) })
+                .map(|t| !t.to_string().trim().is_empty())
+                .unwrap_or(false);
+                if has_title && has_text {
+                    return;
+                }
+            }
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
 /// Opens `url` in the browser (a new tab), then waits for the address bar to show the site.
 pub fn open_website(exe: &Path, url: &SafeUrl) -> Result<NavigationResult, String> {
     // `url.url` always starts with "https://", so it can't be read as a command-line flag.
@@ -249,6 +288,7 @@ pub fn open_website(exe: &Path, url: &SafeUrl) -> Result<NavigationResult, Strin
                 .as_deref()
                 .is_some_and(|a| address_matches(a, url.site()))
             {
+                wait_until_loaded(exe);
                 return Ok(NavigationResult {
                     verified: true,
                     address: last,
@@ -385,6 +425,7 @@ pub fn follow_link(exe: &Path, link: &LinkRef) -> Result<NavigationResult, Strin
         if let Ok(b) = Browser::find(exe) {
             after = b.address();
             if after.is_some() && after != before {
+                wait_until_loaded(exe);
                 return Ok(NavigationResult {
                     verified: true,
                     address: after,
@@ -448,6 +489,13 @@ fn is_password(e: &IUIAutomationElement) -> bool {
         .unwrap_or(true)
 }
 
+fn is_editable(e: &IUIAutomationElement) -> bool {
+    unsafe { e.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) }
+        .and_then(|v| unsafe { v.CurrentIsReadOnly() })
+        .map(|ro| !ro.as_bool())
+        .unwrap_or(false)
+}
+
 fn value_of(e: &IUIAutomationElement) -> Option<String> {
     let v =
         unsafe { e.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) }.ok()?;
@@ -460,7 +508,9 @@ impl Browser {
         let doc = self.document()?;
         let buttons = control_type(&self.a, UIA_ButtonControlTypeId)?;
         let edits = control_type(&self.a, UIA_EditControlTypeId)?;
+        let combos = control_type(&self.a, UIA_ComboBoxControlTypeId)?;
         let either = unsafe { self.a.CreateOrCondition(&buttons, &edits) }
+            .and_then(|c| unsafe { self.a.CreateOrCondition(&c, &combos) })
             .map_err(|_| "Couldn't search the page.".to_string())?;
         let all = unsafe { doc.FindAll(TreeScope_Descendants, &either) }
             .map_err(|_| "I couldn't look for buttons and boxes on this page.".to_string())?;
@@ -470,6 +520,9 @@ impl Browser {
             .filter_map(|e| {
                 let kind = match unsafe { e.CurrentControlType() }.ok()? {
                     t if t == UIA_ButtonControlTypeId => ControlKind::Button,
+                    // Search boxes with suggestions (e.g. YouTube) are combo boxes; drop-down
+                    // menus are too, but those are read-only and can't be typed into.
+                    t if t == UIA_ComboBoxControlTypeId && !is_editable(&e) => return None,
                     _ => ControlKind::TextField,
                 };
                 Some((kind, e))
@@ -500,7 +553,13 @@ pub fn list_controls(exe: &Path) -> Result<Vec<ControlRef>, String> {
     let mut seen: std::collections::HashMap<(ControlKind, String), usize> =
         std::collections::HashMap::new();
     let mut out = Vec::new();
-    for (kind, e) in b.controls()? {
+    let mut found = b.controls()?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while found.is_empty() && Instant::now() < deadline {
+        std::thread::sleep(POLL);
+        found = b.controls()?;
+    }
+    for (kind, e) in found {
         let label = name_of(&e);
         if label.is_empty() {
             continue;
@@ -545,6 +604,9 @@ pub fn press_button(exe: &Path, c: &ControlRef) -> Result<PressResult, String> {
     unsafe { invoke.Invoke() }.map_err(|_| "Pressing that button didn't work.".to_string())?;
     std::thread::sleep(Duration::from_millis(1200));
     let after = Browser::find(exe).ok().and_then(|b| b.address());
+    if after.is_some() && after != before {
+        wait_until_loaded(exe);
+    }
     Ok(PressResult {
         address_changed: after.is_some() && after != before,
         address: after,
