@@ -8,6 +8,7 @@ mod secrets;
 mod speech;
 mod status;
 mod tools;
+mod wake;
 
 use tauri::Manager;
 
@@ -28,7 +29,11 @@ pub fn run() {
                     std::env::consts::OS
                 ),
             );
-            app.manage(prefs::PrefsStore::open(&dir.join("voice-agent.db"))?);
+            let store = prefs::PrefsStore::open(&dir.join("voice-agent.db"))?;
+            let saved = store.load().unwrap_or_default();
+            app.manage(store);
+            wake::start(app.handle().clone());
+            wake::configure(saved.wake_word, &saved.assistant_name);
             app.manage(speech::SpeechState::new());
             app.manage(agent::AgentState::new());
             hotkey::start(app.handle().clone());
@@ -44,6 +49,7 @@ pub fn run() {
             commands::clear_azure_speech,
             commands::get_speech_token,
             commands::speak_natural,
+            commands::get_wake_status,
             commands::get_assistant_setup,
             commands::save_gemini_key,
             commands::clear_gemini_key,

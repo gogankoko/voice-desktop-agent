@@ -6,7 +6,7 @@ This app is built so that you can tell exactly what leaves your computer and whe
 
 | What | Where | How long | How to remove |
 |---|---|---|---|
-| Settings (text size, read replies aloud, voice, practice mode, file search) | `%APPDATA%\com.voiceagent.desktop\voice-agent.db` | Until changed | Uninstall, or delete the file |
+| Settings (text size, read replies aloud, voice, assistant name, wake word, practice mode, file search) | `%APPDATA%\com.voiceagent.desktop\voice-agent.db` | Until changed | Uninstall, or delete the file |
 | Azure Speech key and region | Windows Credential Manager, `VoiceDesktopAgent/AzureSpeech` | Until removed | Settings → Listening → Remove key |
 | Gemini key | Windows Credential Manager, `VoiceDesktopAgent/Gemini` | Until removed | Settings → Understanding → Remove key |
 | Technical log (errors, status codes, which tools ran, timings) | `%APPDATA%\com.voiceagent.desktop\logs\diagnostics.log` (max ~256 KB + one older file) | Rolls over by size | Help → Clear them |
@@ -20,6 +20,10 @@ This app is built so that you can tell exactly what leaves your computer and whe
 - Your microphone audio, only while the microphone button says **Listening**.
 - Used to turn speech into text. This app does not record or keep the audio.
 - See Microsoft's data, privacy and security documentation for Azure AI Speech.
+
+## The wake word: stays on this computer
+
+- When "Start listening when I say Hey <name>" is on, the microphone is open and Windows' own speech recognition listens, on this computer, for those few phrases only. That audio is not recorded, stored or sent anywhere. After the name is heard, your request is sent to Microsoft Azure exactly as when you press the button. It's off unless you turn it on.
 
 ## Sent to Microsoft for the natural voice: only when a natural voice is chosen
 

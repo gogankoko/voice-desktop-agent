@@ -21,11 +21,12 @@ const backend: Record<string, unknown> = {
     computerControl: "limited",
     talkShortcut: "Ctrl+Alt+Space",
   },
-  get_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false, voice: "ava" },
-  set_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false, voice: "ava" },
+  get_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false },
+  set_preferences: { textSize: "normal", speakReplies: false, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false },
   get_speech_setup: { configured: false, region: null },
   get_assistant_setup: { configured: false, model: "gemini-3.8-flash" },
   get_diagnostics: "",
+  get_wake_status: { state: "off", detail: null },
 };
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -160,5 +161,21 @@ describe("requests without an AI key", () => {
     await renderApp();
     const stop = screen.getByRole("button", { name: "Stop" });
     expect(stop.hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("the assistant's name", () => {
+  it("can be renamed in Settings and the header follows", async () => {
+    await renderApp();
+    expect(screen.getByRole("heading", { level: 1, name: "Nova" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const field = screen.getByRole("textbox", { name: "Assistant's name" });
+    await userEvent.clear(field);
+    await userEvent.type(field, "Jarvis");
+    await act(async () => {
+      await userEvent.click(screen.getByRole("button", { name: "Save name" }));
+    });
+    expect(screen.getByRole("heading", { level: 1, name: "Jarvis" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: /Hey Jarvis/ })).toBeTruthy();
   });
 });

@@ -3970,6 +3970,7 @@ dependencies = [
  "tokio",
  "url",
  "windows",
+ "windows-collections",
 ]
 
 [[package]]

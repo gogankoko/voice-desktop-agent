@@ -90,6 +90,42 @@ impl Voice {
     }
 }
 
+pub const DEFAULT_NAME: &str = "Nova";
+
+/// A name the assistant can be called: one or two words of letters (also - and '), at most
+/// 20 characters. Returns the tidied name.
+pub fn normalise_name(name: &str) -> Result<String, String> {
+    let n = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    let ok = (2..=20).contains(&n.chars().count())
+        && n.split(' ').count() <= 2
+        && n.chars()
+            .all(|c| c.is_alphabetic() || c == ' ' || c == '-' || c == '\'')
+        && n.chars().next().is_some_and(char::is_alphabetic);
+    if ok {
+        Ok(n)
+    } else {
+        Err(
+            "The name should be one or two words of letters, up to 20 characters, like \"Nova\"."
+                .into(),
+        )
+    }
+}
+
+static CURRENT_NAME: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// The assistant's current name (for the AI's instructions).
+pub fn assistant_name() -> String {
+    CURRENT_NAME
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+        .unwrap_or_else(|| DEFAULT_NAME.to_string())
+}
+
+fn remember_name(name: &str) {
+    *CURRENT_NAME.write().unwrap_or_else(|p| p.into_inner()) = Some(name.to_string());
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Preferences {
@@ -102,6 +138,10 @@ pub struct Preferences {
     pub file_search: bool,
     /// The voice for replies (natural Azure voices need the Azure Speech key).
     pub voice: Voice,
+    /// What the assistant is called (and answers to).
+    pub assistant_name: String,
+    /// Listen for the name on this computer, to start listening without a button.
+    pub wake_word: bool,
 }
 
 impl Default for Preferences {
@@ -112,6 +152,8 @@ impl Default for Preferences {
             practice_mode: false,
             file_search: false,
             voice: Voice::Ava,
+            assistant_name: DEFAULT_NAME.to_string(),
+            wake_word: false,
         }
     }
 }
@@ -176,7 +218,17 @@ impl PrefsStore {
                 .as_deref()
                 .and_then(Voice::parse)
                 .unwrap_or(defaults.voice),
+            assistant_name: get("assistant_name")?
+                .as_deref()
+                .and_then(|n| normalise_name(n).ok())
+                .unwrap_or(defaults.assistant_name),
+            wake_word: match get("wake_word")?.as_deref() {
+                Some("1") => true,
+                Some("0") => false,
+                _ => defaults.wake_word,
+            },
         })
+        .inspect(|p| remember_name(&p.assistant_name))
     }
 
     pub fn save(&self, prefs: &Preferences) -> rusqlite::Result<()> {
@@ -188,6 +240,8 @@ impl PrefsStore {
             ("practice_mode", if prefs.practice_mode { "1" } else { "0" }),
             ("file_search", if prefs.file_search { "1" } else { "0" }),
             ("voice", prefs.voice.as_str()),
+            ("assistant_name", prefs.assistant_name.as_str()),
+            ("wake_word", if prefs.wake_word { "1" } else { "0" }),
         ] {
             tx.execute(
                 "INSERT INTO preferences (key, value) VALUES (?1, ?2)
@@ -195,7 +249,9 @@ impl PrefsStore {
                 params![key, value],
             )?;
         }
-        tx.commit()
+        tx.commit()?;
+        remember_name(&prefs.assistant_name);
+        Ok(())
     }
 }
 
@@ -214,6 +270,28 @@ mod tests {
             } else {
                 Voice::Windows
             },
+            assistant_name: if speak_replies { "Jarvis" } else { "Mister T" }.into(),
+            wake_word: speak_replies,
+        }
+    }
+
+    #[test]
+    fn names_are_tidied_and_restricted() {
+        assert_eq!(normalise_name("  Nova ").unwrap(), "Nova");
+        assert_eq!(normalise_name("Mister   T").unwrap(), "Mister T");
+        assert_eq!(normalise_name("Zoë").unwrap(), "Zoë");
+        assert_eq!(normalise_name("O'Neil").unwrap(), "O'Neil");
+        for bad in [
+            "",
+            "N",
+            "Hey there my friend",
+            "R2D2",
+            "<script>",
+            "Nova!",
+            "-Nova",
+            &"a".repeat(21),
+        ] {
+            assert!(normalise_name(bad).is_err(), "{bad}");
         }
     }
 

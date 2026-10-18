@@ -11,6 +11,8 @@ export const preferencesSchema = z.strictObject({
   practiceMode: z.boolean(),
   fileSearch: z.boolean(),
   voice: voiceSchema,
+  assistantName: z.string().min(2).max(20),
+  wakeWord: z.boolean(),
 });
 
 export type TextSize = z.infer<typeof textSizeSchema>;

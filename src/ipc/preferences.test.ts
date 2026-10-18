@@ -4,19 +4,19 @@ import { TEXT_SCALE, preferencesSchema, textSizeSchema } from "./preferences";
 describe("preferencesSchema", () => {
   it("accepts every text size the backend knows", () => {
     for (const textSize of textSizeSchema.options) {
-      expect(preferencesSchema.parse({ textSize, speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava" })).toEqual({ textSize, speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava" });
+      expect(preferencesSchema.parse({ textSize, speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false })).toEqual({ textSize, speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false });
     }
   });
 
   it("rejects unknown sizes, raw numbers and extra fields", () => {
-    expect(() => preferencesSchema.parse({ textSize: "huge", speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava" })).toThrow();
-    expect(() => preferencesSchema.parse({ textSize: 1.4, speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava" })).toThrow();
-    expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava", extra: true })).toThrow();
+    expect(() => preferencesSchema.parse({ textSize: "huge", speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false })).toThrow();
+    expect(() => preferencesSchema.parse({ textSize: 1.4, speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false })).toThrow();
+    expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: true, practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false, extra: true })).toThrow();
   });
 
   it("requires speakReplies to be a boolean", () => {
     expect(() => preferencesSchema.parse({ textSize: "large" })).toThrow();
-    expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: "yes", practiceMode: false, fileSearch: false, voice: "ava" })).toThrow();
+    expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: "yes", practiceMode: false, fileSearch: false, voice: "ava", assistantName: "Nova", wakeWord: false })).toThrow();
     expect(() => preferencesSchema.parse({ textSize: "large", speakReplies: true })).toThrow();
   });
 

@@ -518,6 +518,12 @@ input:hover {
   min-width: 0;
 }
 
+.name-row {
+  max-width: 28em;
+  margin-bottom: 0.75rem;
+  box-shadow: none;
+}
+
 .composer-row button[type="submit"]:not(:disabled) {
   background: linear-gradient(135deg, var(--mic-from), var(--mic-to));
   color: #ffffff;

@@ -98,6 +98,12 @@
 - The Azure key never leaves Rust; requests use the same short-lived token as listening and go only to `https://<region>.tts.speech.microsoft.com`. The window receives MP3 bytes and plays them with Web Audio, so the content security policy is unchanged.
 - The log records only lengths (characters, bytes) and HTTP status codes, never the text.
 
+## Wake word (since 0.3)
+
+- Off by default. When on, Windows.Media.SpeechRecognition runs on this computer with a list constraint of only "hey/ok/okay/hi <name>" and "<name>"; only high/medium-confidence matches count, at most one every 2 seconds. It never sends audio anywhere.
+- Hearing the name does exactly what the microphone button does (the person's request is then heard through Azure, as usual). It is ignored while the app is listening, working, or saying its own name.
+- The name is validated in Rust (one or two words of letters, up to 20 characters) before it's saved, used in the phrases or put in the AI's instructions.
+
 ## Action risk levels (enforced by the tool registry)
 
 | Level | Examples | Rule |

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-wake-status"
+description = "Enables the get_wake_status command without any pre-configured scope."
+commands.allow = ["get_wake_status"]
+
+[[permission]]
+identifier = "deny-get-wake-status"
+description = "Denies the get_wake_status command without any pre-configured scope."
+commands.deny = ["get_wake_status"]

@@ -45,6 +45,8 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke-helpers.ps1
 powershell -ExecutionPolicy Bypass -File scripts/smoke-built-in.ps1
 # Natural voice: Azure returns audio for the stored key (nothing is played):
 cargo test --manifest-path src-tauri/Cargo.toml live_tts -- --ignored --nocapture
+# Wake word (AUDIBLE; needs the microphone to hear the speakers, which many laptops prevent):
+cargo test --manifest-path src-tauri/Cargo.toml live_wake -- --ignored --nocapture --test-threads=1
 # Confirmation gate in Practice mode (needs a Gemini key; launches the app itself; nothing is sent):
 powershell -ExecutionPolicy Bypass -File scripts/smoke-confirm.ps1
 # Sends a deliberately FAKE key to Microsoft and checks it is rejected and not stored:

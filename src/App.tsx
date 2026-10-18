@@ -14,7 +14,7 @@ import {
   runAgent,
 } from "./ipc/agent";
 import { type AppStatus, type Availability, getAppStatus } from "./ipc/appStatus";
-import { onReminderDue, onTalkShortcut } from "./ipc/events";
+import { type WakeStatus, getWakeStatus, onReminderDue, onTalkShortcut, onWakeStatus, onWakeWord } from "./ipc/events";
 import {
   type Preferences,
   TEXT_SCALE,
@@ -98,7 +98,12 @@ export default function App() {
     practiceMode: false,
     fileSearch: false,
     voice: "ava",
+    assistantName: "Nova",
+    wakeWord: false,
   });
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [wakeStatus, setWakeStatus] = useState<WakeStatus>({ state: "off", detail: null });
+  const lastSpoken = useRef("");
   const [question, setQuestion] = useState<ConfirmationRequest | null>(null);
   const [answerHint, setAnswerHint] = useState<string | null>(null);
   const [answerListening, setAnswerListening] = useState(false);
@@ -120,6 +125,7 @@ export default function App() {
   const taskId = useRef(0);
   const recognizer = useRef<SpeechRecognizer | null>(null);
   const talkShortcut = useRef<() => void>(() => {});
+  const wakeRef = useRef<() => void>(() => {});
   const reminderRef = useRef<(text: string) => void>(() => {});
   const speakReplies = useRef(prefs.speakReplies);
   speakReplies.current = prefs.speakReplies;
@@ -171,6 +177,7 @@ export default function App() {
 
   function say(text: string) {
     addMessage("assistant", text);
+    lastSpoken.current = text;
     if (speakReplies.current) synth.speak(text);
   }
 
@@ -296,7 +303,12 @@ export default function App() {
     const subscriptions = [
       onTalkShortcut(() => talkShortcut.current()),
       onReminderDue((text) => reminderRef.current(text)),
+      onWakeWord(() => wakeRef.current()),
+      onWakeStatus(setWakeStatus),
     ];
+    getWakeStatus()
+      .then(setWakeStatus)
+      .catch(() => {});
     return () => {
       for (const s of subscriptions) void s.then((unsubscribe) => unsubscribe()).catch(() => {});
     };
@@ -348,7 +360,18 @@ export default function App() {
     if (question) void answerBySpeaking();
     else if (micEnabled) void onMic();
   };
+  // Hearing the name: like the button, but never interrupts listening or work in progress,
+  // and ignores the assistant hearing its own name in what it's saying.
+  wakeRef.current = () => {
+    if (listening || answerListening || WORKING.has(state.phase)) return;
+    const name = prefs.assistantName.toLowerCase();
+    if (state.phase === "speaking" && lastSpoken.current.toLowerCase().includes(name)) return;
+    setView("main");
+    if (question) void answerBySpeaking();
+    else if (micEnabled) void onMic();
+  };
   const phase = PHASE_TEXT[state.phase];
+  const wakeOn = wakeStatus.state === "listening";
 
   return (
     <div className="app">
@@ -357,7 +380,7 @@ export default function App() {
           <span className="brand-logo" aria-hidden="true">
             <MicIcon size="1.2em" />
           </span>
-          <h1>Voice Assistant</h1>
+          <h1>{prefs.assistantName}</h1>
         </div>
         <nav aria-label="Main">
           <button type="button" aria-current={view === "main" ? "page" : undefined} onClick={() => setView("main")}>
@@ -422,7 +445,7 @@ export default function App() {
                   ? "To talk to me, set up Listening in Settings. You can type below meanwhile."
                   : listening
                     ? "The microphone is on. Speak now, then pause when you're done."
-                    : `Press to talk${status.talkShortcut ? `, or press ${status.talkShortcut} from anywhere` : ""}. The microphone is only on while this button says Listening.`}
+                    : `${wakeOn ? `Say "Hey ${prefs.assistantName}", press` : "Press"} to talk${status.talkShortcut ? `, or press ${status.talkShortcut} from anywhere` : ""}. ${wakeOn ? "Only Windows listens for the name, on this computer; your words go to Azure after it's heard." : "The microphone is only on while this button says Listening."}`}
             </p>
             {!voiceReady && status && (
               <button type="button" onClick={() => setView("settings")}>
@@ -588,6 +611,48 @@ export default function App() {
               ? "Natural voices are made by Microsoft Azure: the text of each reply is sent to Microsoft. Long articles are always read with the Windows voice."
               : "Natural voices need the Azure Speech key (set up Listening below). Until then, the Windows voice is used."}
           </p>
+          </section>
+
+          <section className="card" aria-labelledby="name-heading">
+            <h3 id="name-heading">Name</h3>
+            <form
+              className="composer-row name-row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (nameDraft === null) return;
+                changePrefs({ ...prefs, assistantName: nameDraft.trim() });
+                setNameDraft(null);
+              }}
+            >
+              <label htmlFor="assistant-name" className="visually-hidden">
+                Assistant's name
+              </label>
+              <input
+                id="assistant-name"
+                value={nameDraft ?? prefs.assistantName}
+                onChange={(e) => setNameDraft(e.target.value)}
+                maxLength={20}
+                autoComplete="off"
+              />
+              <button type="submit" disabled={nameDraft === null || nameDraft.trim() === prefs.assistantName}>
+                Save name
+              </button>
+            </form>
+            <label className="choice toggle">
+              <input
+                type="checkbox"
+                checked={prefs.wakeWord}
+                onChange={(e) => changePrefs({ ...prefs, wakeWord: e.target.checked })}
+              />
+              Start listening when I say "Hey {prefs.assistantName}" or "{prefs.assistantName}"
+            </label>
+            <p className="hint-left" role="status">
+              {wakeStatus.state === "listening"
+                ? `On: Windows is listening for "${prefs.assistantName}" on this computer. Nothing is sent anywhere until it hears it.`
+                : wakeStatus.state === "unavailable"
+                  ? `Can't listen for the name: ${wakeStatus.detail ?? "Windows speech recognition isn't available."}`
+                  : "Off. When on, Windows listens for the name on this computer (nothing is sent until it's heard). Two-word names work best."}
+            </p>
           </section>
 
           <section className="speech-settings" aria-labelledby="files-heading">

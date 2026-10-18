@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::prompt::{date_line, system_instruction};
+use super::prompt::{date_line, name_line, system_instruction};
 use super::registry;
 
 /// Pinned rather than a `-latest` alias so behaviour doesn't change underneath us.
@@ -221,7 +221,12 @@ pub fn request_body(model: &str, input: &[Value], practice: bool, now: &str) -> 
     json!({
         "model": model,
         "input": input,
-        "system_instruction": format!("{}{}", system_instruction(practice), date_line(now)),
+        "system_instruction": format!(
+            "{}{}{}",
+            system_instruction(practice),
+            name_line(&crate::prefs::assistant_name()),
+            date_line(now)
+        ),
         "tools": registry::declarations(practice),
         "store": false,
         "generation_config": {
