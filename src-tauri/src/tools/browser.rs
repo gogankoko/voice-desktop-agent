@@ -94,7 +94,7 @@ pub struct NavigationResult {
     pub address: Option<String>,
 }
 
-fn automation() -> Result<IUIAutomation, String> {
+pub(crate) fn automation() -> Result<IUIAutomation, String> {
     unsafe {
         // S_FALSE / RPC_E_CHANGED_MODE just mean COM is already initialised on this thread.
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -116,7 +116,7 @@ fn int_variant(v: i32) -> VARIANT {
     var
 }
 
-fn control_type(
+pub(crate) fn control_type(
     a: &IUIAutomation,
     ct: UIA_CONTROLTYPE_ID,
 ) -> Result<IUIAutomationCondition, String> {
@@ -211,7 +211,7 @@ impl Browser {
     }
 }
 
-fn name_of(e: &IUIAutomationElement) -> String {
+pub(crate) fn name_of(e: &IUIAutomationElement) -> String {
     let raw = unsafe { e.CurrentName() }
         .map(|b| b.to_string())
         .unwrap_or_default();
@@ -498,7 +498,7 @@ pub fn is_sensitive_label(label: &str) -> bool {
         .any(|w| padded.contains(&format!(" {w} ")))
 }
 
-fn is_password(e: &IUIAutomationElement) -> bool {
+pub(crate) fn is_password(e: &IUIAutomationElement) -> bool {
     unsafe { e.CurrentIsPassword() }
         .map(|b| b.as_bool())
         .unwrap_or(true)
