@@ -25,6 +25,7 @@ import {
 import { openApplication } from "./ipc/tools";
 import { AssistantSettings } from "./ui/AssistantSettings";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { Diagnostics } from "./ui/Diagnostics";
 import { SpeechSettings } from "./ui/SpeechSettings";
 import { errorText } from "./ui/errorText";
 import { PHASE_TEXT } from "./ui/phaseText";
@@ -401,6 +402,7 @@ export default function App() {
             Before anything important, like buying something, sending a message, or deleting
             files, I will always tell you exactly what I'm about to do and wait for your OK.
           </p>
+          <Diagnostics />
         </main>
       )}
 
