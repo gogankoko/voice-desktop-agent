@@ -26,6 +26,7 @@ This app is built so that you can tell exactly what leaves your computer and whe
 - **When you ask about a web page:** up to about 6,000 characters of that page's text. ("Read me this article" is different: that text is read aloud by your computer and is **not** sent to Google.)
 - **When you ask what's on your screen:** the titles of your open windows.
 - **When you ask about a window (e.g. "explain this error"):** up to about 4,000 characters of that window's text and its button names (never password boxes).
+- **When you ask the assistant to do something in an app (e.g. Spotify):** the names of the buttons and boxes visible in that app's window, and the start of what's typed in its boxes (never password boxes).
 - **When you ask for help writing an email:** what you want to say, and the assistant's draft (it writes the text it types).
 - **When file search is on and you ask for a file:** the names, folder names, dates and sizes of up to 10 matching files (never their contents or full paths).
 - Requests are sent with `store: false`, so Google doesn't keep them as stored interactions.
@@ -37,4 +38,4 @@ Screenshots, the contents of files on your computer, your passwords, the content
 
 ## Things the app does on your computer
 
-Only through the tools listed in SECURITY.md: open a fixed list of everyday apps, open https websites, read, scroll, follow links, type into ordinary boxes and press buttons in the browser, read a window's text when asked, Magnifier and zoom, and (if you turn it on) find files by name. Anything high-risk asks you on screen first.
+Only through the tools listed in SECURITY.md: open everyday apps and apps from your Start menu, press buttons and type in app windows, use media keys, open https websites, read, scroll, follow links, type into ordinary boxes and press buttons in the browser, read a window's text when asked, Magnifier and zoom, and (if you turn it on) find files by name. Anything high-risk asks you on screen first.

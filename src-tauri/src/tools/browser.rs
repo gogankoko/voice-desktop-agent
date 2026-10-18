@@ -504,14 +504,14 @@ pub(crate) fn is_password(e: &IUIAutomationElement) -> bool {
         .unwrap_or(true)
 }
 
-fn is_editable(e: &IUIAutomationElement) -> bool {
+pub(crate) fn is_editable(e: &IUIAutomationElement) -> bool {
     unsafe { e.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) }
         .and_then(|v| unsafe { v.CurrentIsReadOnly() })
         .map(|ro| !ro.as_bool())
         .unwrap_or(false)
 }
 
-fn value_of(e: &IUIAutomationElement) -> Option<String> {
+pub(crate) fn value_of(e: &IUIAutomationElement) -> Option<String> {
     let v =
         unsafe { e.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) }.ok()?;
     unsafe { v.CurrentValue() }.ok().map(|b| b.to_string())
@@ -805,23 +805,40 @@ pub fn type_into_field(exe: &Path, c: &ControlRef, text: &str) -> Result<TypeRes
     }
     let b = Browser::find(exe)?;
     let field = b.find_control(c)?;
-    if is_password(&field) {
+    type_into_element(b.hwnd, &field, text, "the browser window")
+}
+
+/// Types into `field` of window `hwnd`: brings the window forward, focuses the box, and only
+/// sends keystrokes if that window **is** in front and the box **has** the keyboard focus.
+/// Shared by web pages and app windows. Callers check sensitivity first.
+pub(crate) fn type_into_element(
+    hwnd: HWND,
+    field: &IUIAutomationElement,
+    text: &str,
+    window_name: &str,
+) -> Result<TypeResult, String> {
+    if text.chars().any(|ch| ch.is_control()) {
+        return Err("The text can't contain line breaks or special keys.".into());
+    }
+    if is_password(field) {
         return Err("That box is for a password. For your safety I never type into those.".into());
     }
     unsafe {
-        let _ = SetForegroundWindow(b.hwnd);
+        let _ = SetForegroundWindow(hwnd);
     }
     std::thread::sleep(Duration::from_millis(250));
     unsafe { field.SetFocus() }
         .map_err(|_| "I couldn't put the cursor in that box.".to_string())?;
     std::thread::sleep(Duration::from_millis(200));
 
-    let browser_in_front = unsafe { GetForegroundWindow() } == b.hwnd;
+    let window_in_front = unsafe { GetForegroundWindow() } == hwnd;
     let field_focused = unsafe { field.CurrentHasKeyboardFocus() }
         .map(|f| f.as_bool())
         .unwrap_or(false);
-    if !browser_in_front || !field_focused {
-        return Err("I couldn't safely put the cursor in that box (another window may be in front), so I didn't type anything. Click on the browser window and ask me again.".into());
+    if !window_in_front || !field_focused {
+        return Err(format!(
+            "I couldn't safely put the cursor in that box (another window may be in front), so I didn't type anything. Click on {window_name} and ask me again."
+        ));
     }
 
     let inputs = replace_text_keystrokes(text);
@@ -833,7 +850,7 @@ pub fn type_into_field(exe: &Path, c: &ControlRef, text: &str) -> Result<TypeRes
         );
     }
     std::thread::sleep(Duration::from_millis(250));
-    let now = value_of(&field).unwrap_or_default();
+    let now = value_of(field).unwrap_or_default();
     Ok(TypeResult {
         verified: now.trim() == text.trim(),
     })
@@ -1113,6 +1130,10 @@ text:
         press_button(&exe, &find("Send")).unwrap();
         std::thread::sleep(Duration::from_millis(500));
         let page = read_page(&exe).unwrap();
-        assert!(page.text.contains("Nothing was really sent"), "{}", page.text);
+        assert!(
+            page.text.contains("Nothing was really sent"),
+            "{}",
+            page.text
+        );
     }
 }

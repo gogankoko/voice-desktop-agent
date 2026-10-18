@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 
 use super::gemini::{ChatModel, ModelError, ModelTurn, ProposedCall};
 use super::*;
+use crate::tools::app_control::AppControl;
+use crate::tools::apps::{Launched, MediaAction};
 use crate::tools::browser::ZoomDirection;
 use crate::tools::files::{FileKind, FoundFile, When};
 use crate::tools::screen::{MagnifierAction, MagnifierResult, SettingsPage};
@@ -67,6 +69,8 @@ struct FakeDesktop {
     typed: Mutex<Vec<(String, String)>>,
     backs: Mutex<Vec<(Option<String>, Option<String>)>>,
     screen: Mutex<Vec<String>>,
+    media: Mutex<Vec<MediaAction>>,
+    app_windows_listed: Mutex<Vec<isize>>,
 }
 
 const PAGE_LINKS: [&str; 3] = ["Go to the second page", "Delete my account", "News"];
@@ -245,6 +249,63 @@ impl ToolExecutor for FakeDesktop {
         );
         self.typed.lock().unwrap().push((c.label, text));
         Ok(TypeResult { verified: true })
+    }
+    async fn open_installed_app(&self, name: String) -> Result<Launched, String> {
+        if name.eq_ignore_ascii_case("spotify") {
+            Ok(Launched {
+                name: "Spotify".into(),
+                verified: true,
+                hwnd: Some(42),
+            })
+        } else {
+            Err(format!(
+                "I couldn't find an app called '{name}' in the Start menu."
+            ))
+        }
+    }
+    async fn list_app_controls(
+        &self,
+        hwnd: isize,
+        contains: Option<String>,
+    ) -> Result<(String, Vec<AppControl>), String> {
+        self.app_windows_listed.lock().unwrap().push(hwnd);
+        let c = |kind, label: &str, text_len: usize| AppControl {
+            kind,
+            label: label.into(),
+            ordinal: 0,
+            hwnd,
+            sensitive: false,
+            value: (kind == ControlKind::TextField).then(|| "x".repeat(text_len.min(200))),
+            text_len,
+        };
+        let all = vec![
+            c(ControlKind::TextField, "What do you want to play?", 0),
+            c(ControlKind::Button, "Play", 0),
+            c(ControlKind::Button, "Play Yeat", 0),
+            c(ControlKind::Button, "Remove from Liked Songs", 0),
+            c(ControlKind::TextField, "Notes", 5000),
+        ];
+        Ok((
+            "Spotify".into(),
+            all.into_iter()
+                .filter(|c| {
+                    crate::tools::app_control::matches_filter(&c.label, contains.as_deref())
+                })
+                .collect(),
+        ))
+    }
+    async fn press_app_button(&self, c: AppControl) -> Result<(), String> {
+        self.pressed.lock().unwrap().push(c.label);
+        Ok(())
+    }
+    async fn type_into_app(&self, c: AppControl, text: String) -> Result<TypeResult, String> {
+        assert!(!c.sensitive);
+        self.typed.lock().unwrap().push((c.label, text));
+        Ok(TypeResult { verified: true })
+    }
+    async fn media_key(&self, action: MediaAction) -> Result<(), String> {
+        self.media.lock().unwrap().push(action);
+        Ok(())
     }
     async fn follow_link(&self, link: LinkRef) -> Result<NavigationResult, String> {
         self.followed.lock().unwrap().push(link.text);
@@ -1610,4 +1671,186 @@ fn risky_button_confirmation_shows_what_is_filled_in() {
     );
     assert_eq!(c.text.details[1].value, "anna@example.com");
     assert!(c.text.details.iter().all(|d| d.label != "Card number"));
+}
+
+#[test]
+fn opens_spotify_searches_and_plays_in_one_request() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[(
+            "o1",
+            "open_installed_app",
+            json!({"name": "Spotify"}),
+        )])),
+        Ok(call_turn(&[(
+            "l1",
+            "list_app_controls",
+            json!({"contains": "what do you want"}),
+        )])),
+        Ok(call_turn(&[(
+            "t1",
+            "type_into_app",
+            json!({"number": 1, "text": "Yeat"}),
+        )])),
+        Ok(call_turn(&[(
+            "l2",
+            "list_app_controls",
+            json!({"contains": "play yeat"}),
+        )])),
+        Ok(call_turn(&[(
+            "p1",
+            "press_app_button",
+            json!({"number": 1}),
+        )])),
+        Ok(text_turn("Playing Yeat on Spotify.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let out = finished(drive(&model, &desk, false));
+    assert_eq!(out.reply, "Playing Yeat on Spotify.");
+    assert!(out.actions.iter().all(|a| a.ok), "{:?}", out.actions);
+    assert_eq!(
+        *desk.app_windows_listed.lock().unwrap(),
+        vec![42, 42],
+        "the app just opened"
+    );
+    assert_eq!(
+        *desk.typed.lock().unwrap(),
+        vec![("What do you want to play?".to_string(), "Yeat".to_string())]
+    );
+    assert_eq!(*desk.pressed.lock().unwrap(), vec!["Play Yeat".to_string()]);
+}
+
+#[test]
+fn risky_app_button_asks_first_and_shows_the_app() {
+    let state = AgentState::new();
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[("l1", "list_app_controls", json!({}))])),
+        Ok(call_turn(&[(
+            "p4",
+            "press_app_button",
+            json!({"number": 4}),
+        )])),
+        Ok(text_turn("Done.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let out = block_on(state.run(&model, &desk, "remove this song", false, |_| {})).unwrap();
+    let c = out.confirmation.expect("asks first");
+    assert_eq!(c.text.action, "Press a button in Spotify");
+    assert_eq!(c.text.details[0].value, "Remove from Liked Songs");
+    assert!(
+        desk.pressed.lock().unwrap().is_empty(),
+        "nothing pressed before Yes"
+    );
+}
+
+#[test]
+fn replacing_lots_of_text_in_an_app_asks_first() {
+    let state = AgentState::new();
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[("l1", "list_app_controls", json!({}))])),
+        Ok(call_turn(&[(
+            "t5",
+            "type_into_app",
+            json!({"number": 5, "text": "hello"}),
+        )])),
+        Ok(text_turn("Done.")),
+    ]);
+    let desk = FakeDesktop::default();
+    let out = block_on(state.run(&model, &desk, "type hello", false, |_| {})).unwrap();
+    let c = out.confirmation.expect("asks first");
+    assert!(
+        c.text
+            .details
+            .iter()
+            .any(|d| d.value == "5000 characters already in the box")
+    );
+    assert!(desk.typed.lock().unwrap().is_empty());
+}
+
+#[test]
+fn app_numbers_must_come_from_the_latest_list() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[(
+            "p1",
+            "press_app_button",
+            json!({"number": 1}),
+        )])),
+        Ok(text_turn("Sorry.")),
+    ]);
+    let desk = FakeDesktop::default();
+    finished(drive(&model, &desk, false));
+    assert!(desk.pressed.lock().unwrap().is_empty());
+    let r = &results(&model)[0];
+    assert!(
+        r["result"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("list_app_controls"),
+        "{r}"
+    );
+}
+
+#[test]
+fn media_keys_can_repeat_in_one_request() {
+    let model = ScriptedModel::new(vec![
+        Ok(call_turn(&[(
+            "m1",
+            "media_control",
+            json!({"action": "volume_up"}),
+        )])),
+        Ok(call_turn(&[(
+            "m2",
+            "media_control",
+            json!({"action": "volume_up"}),
+        )])),
+        Ok(call_turn(&[(
+            "m3",
+            "media_control",
+            json!({"action": "next_track"}),
+        )])),
+        Ok(text_turn("Louder, and skipped.")),
+    ]);
+    let desk = FakeDesktop::default();
+    finished(drive(&model, &desk, false));
+    assert_eq!(
+        *desk.media.lock().unwrap(),
+        vec![
+            MediaAction::VolumeUp,
+            MediaAction::VolumeUp,
+            MediaAction::NextTrack
+        ]
+    );
+}
+
+/// Live: real Gemini + real Spotify (must be installed). Plays Yeat for a few seconds, then
+/// pauses. AUDIBLE / VISIBLE. Run:
+/// cargo test --manifest-path src-tauri/Cargo.toml live_spotify_agent -- --ignored --nocapture --test-threads=1
+#[test]
+#[ignore = "real Gemini + real Spotify"]
+fn live_spotify_agent() {
+    let key = crate::secrets::load_gemini_key()
+        .unwrap()
+        .expect("a Gemini key is stored");
+    let state = AgentState::new();
+    let ask = |q: &str| {
+        let model = super::gemini::Gemini::new(reqwest::Client::new(), key.clone(), false);
+        let out = block_on(state.run(&model, &DesktopExecutor, q, false, |t| {
+            println!("  executing: {t}")
+        }))
+        .unwrap_or_else(|e| panic!("{q}: {e}"));
+        println!(
+            "Q: {q}\n  actions: {:?}\n  reply: {}",
+            out.actions.iter().map(|a| &a.summary).collect::<Vec<_>>(),
+            out.reply,
+        );
+        out
+    };
+    let a = ask("Play Yeat on Spotify");
+    assert!(
+        a.actions
+            .iter()
+            .any(|x| x.tool == "press_app_button" && x.ok)
+    );
+    std::thread::sleep(std::time::Duration::from_secs(4));
+    let b = ask("Pause the music");
+    assert!(b.actions.iter().any(|x| x.tool == "media_control" && x.ok));
 }

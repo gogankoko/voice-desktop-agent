@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Open and operate your apps:** "open Spotify", "play Yeat on Spotify", "pause the music", "next song", "turn it up". The assistant can open any app in your Start menu by name, press buttons and type into search boxes inside it, and use the media keys. Command lines, system tools, installers and password managers are always off limits; buttons like remove, delete, send or buy ask you first.
 - **Make everything bigger:** the assistant can turn on Windows Magnifier and zoom in or out, zoom web pages, and open the right Windows Settings page for bigger text, display size or a bigger mouse pointer.
 - **Find your files (opt-in):** "find the photo I downloaded yesterday" searches file names in Downloads, Pictures, Documents and Desktop, then opens the photo or shows it in its folder. Off until you turn it on in Settings.
 - **Open everyday apps:** Notepad, Calculator, Paint, File Explorer and Windows Settings, as well as the browser.
