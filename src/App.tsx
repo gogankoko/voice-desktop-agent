@@ -29,6 +29,7 @@ import { Reader } from "./ui/Reader";
 import { Diagnostics } from "./ui/Diagnostics";
 import { SpeechSettings } from "./ui/SpeechSettings";
 import { errorText } from "./ui/errorText";
+import { MicIcon, WavesIcon } from "./ui/icons";
 import { PHASE_TEXT } from "./ui/phaseText";
 import { playChime } from "./voice/chime";
 import type { SpeechRecognizer } from "./voice/types";
@@ -323,7 +324,12 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Voice Assistant</h1>
+        <div className="brand">
+          <span className="brand-logo" aria-hidden="true">
+            <MicIcon size="1.2em" />
+          </span>
+          <h1>Voice Assistant</h1>
+        </div>
         <nav aria-label="Main">
           <button type="button" aria-current={view === "main" ? "page" : undefined} onClick={() => setView("main")}>
             Home
@@ -376,7 +382,7 @@ export default function App() {
               onClick={() => void onMic()}
             >
               <span aria-hidden="true" className="mic-icon">
-                {listening ? "◉" : "🎤"}
+                {listening ? <WavesIcon /> : <MicIcon />}
               </span>
               <span>{listening ? "Listening… press to stop" : "Talk to me"}</span>
             </button>
@@ -418,7 +424,7 @@ export default function App() {
             ) : (
               <ol aria-live="polite" aria-relevant="additions">
                 {messages.map((m) => (
-                  <li key={m.id} className={`msg msg-${m.from}`}>
+                  <li key={m.id} className={`msg msg-${m.from}${m.from === "action" && !m.ok ? " msg-warn" : ""}`}>
                     <span className="msg-from">{SPEAKER[m.from]}:</span>{" "}
                     {m.from === "action" && <span aria-hidden="true">{m.ok ? "✓ " : "⚠ "}</span>}
                     {m.text}
@@ -492,6 +498,8 @@ export default function App() {
       {view === "settings" && (
         <main className="main panel">
           <h2>Settings</h2>
+          <section className="card" aria-labelledby="display-heading">
+          <h3 id="display-heading">Display and voice</h3>
           <fieldset className="choices">
             <legend>Text size</legend>
             {textSizeSchema.options.map((size) => (
@@ -524,6 +532,7 @@ export default function App() {
             />
             Practice mode (try sending a pretend message; nothing is really sent)
           </label>
+          </section>
 
           <section className="speech-settings" aria-labelledby="files-heading">
             <h3 id="files-heading">Finding your files</h3>
